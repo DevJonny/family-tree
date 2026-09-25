@@ -120,17 +120,24 @@ Zustand store (connect/sync/conflict-resolution UI) — see Roadmap below.
 ## Roadmap
 
 - [x] Phase 1 — GEDCOM parse/serialize/model, undo/redo engine, minimal
-      import/edit/export UI (this commit).
+      import/edit/export UI.
 - [ ] Phase 2 — Google Drive sync wired end-to-end (needs your OAuth
       client ID from the setup steps above), including conflict-resolution
       UI.
-- [ ] Phase 3 — Tree visualization (pedigree/descendant chart), not just
-      a flat list.
+- [x] Phase 3 — Pedigree chart (`src/components/PedigreeChart.tsx`):
+      click a person to see 4 generations of ancestors, with "+ Add
+      father/mother" slots that create and link a new person in place.
+      Relationship traversal (`getParents`/`getChildren`/`getSpouses`/
+      `buildAncestorTree`) lives in `src/lib/gedcom/relationships.ts`,
+      unit tested separately from the UI. A descendant-tree view is not
+      built yet.
 - [ ] Phase 4 — Richer editing: multiple names, more event/attribute
       types with UI (not just raw pass-through), sources/citations,
       media attachments, resolved NOTE/SOUR pointer records.
-- [ ] Phase 5 — A visible "history" panel (the `History` class already
-      tracks labeled entries with timestamps; just needs a UI).
+- [x] Phase 5 — History panel (`src/components/HistoryPanel.tsx`):
+      shows every edit chronologically with a "current" marker; clicking
+      any past or future entry jumps straight there via the store's
+      `undoTo`/`redoTo` (repeated `undo()`/`redo()` under the hood).
 
 ## Local dev
 

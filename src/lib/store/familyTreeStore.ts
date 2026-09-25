@@ -2,8 +2,10 @@
 
 import { create } from "zustand";
 import { History } from "../history/historyStore";
+import type { HistorySnapshot } from "../history/types";
 import {
   buildFamilyTree,
+  type Family,
   type FamilyTree,
   type GedcomParseWarning,
   type Individual,
@@ -27,27 +29,36 @@ interface FamilyTreeState {
   canUndo: boolean;
   canRedo: boolean;
   dirty: boolean;
+  history: HistorySnapshot;
+  selectedId: string | null;
 
   /** Replaces the whole tree (e.g. from an imported/synced GEDCOM file). Not undoable. */
   loadTree: (tree: FamilyTree, fileName?: string, warnings?: GedcomParseWarning[]) => void;
   loadFromGedcomText: (text: string, fileName?: string) => GedcomParseWarning[];
   exportToGedcomText: () => string;
 
+  selectIndividual: (id: string | null) => void;
   addIndividual: (name?: NameParts) => string;
   updateIndividualName: (id: string, index: number, patch: Partial<NameParts>) => void;
   removeIndividual: (id: string) => void;
+  /** Creates a new person and links them as this child's father/mother, creating a FAM record if needed. */
+  addParent: (childId: string, which: "father" | "mother", name?: NameParts) => string;
 
   undo: () => void;
   redo: () => void;
+  /** Undoes repeatedly until the given undo-stack entry has been undone. */
+  undoTo: (entryId: string) => void;
+  /** Redoes repeatedly until the given redo-stack entry has been redone. */
+  redoTo: (entryId: string) => void;
 }
 
 // The History instance lives outside React state; the store mirrors its
 // current snapshot so components can subscribe reactively via zustand.
-const history = new History<FamilyTree>(EMPTY_TREE);
+const historyEngine = new History<FamilyTree>(EMPTY_TREE);
 
 export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
-  history.subscribe((tree) => {
-    set({ tree, canUndo: history.canUndo, canRedo: history.canRedo, dirty: true });
+  historyEngine.subscribe((tree, snapshot) => {
+    set({ tree, canUndo: historyEngine.canUndo, canRedo: historyEngine.canRedo, dirty: true, history: snapshot });
   });
 
   return {
@@ -57,9 +68,11 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
     canUndo: false,
     canRedo: false,
     dirty: false,
+    history: historyEngine.snapshot,
+    selectedId: null,
 
     loadTree: (tree, fileName, warnings = []) => {
-      history.reset(tree);
+      historyEngine.reset(tree);
       set({
         tree,
         fileName: fileName ?? get().fileName,
@@ -67,6 +80,8 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
         canUndo: false,
         canRedo: false,
         dirty: false,
+        history: historyEngine.snapshot,
+        selectedId: null,
       });
     },
 
@@ -78,9 +93,11 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
 
     exportToGedcomText: () => saveGedcom(get().tree),
 
+    selectIndividual: (id) => set({ selectedId: id }),
+
     addIndividual: (name) => {
       const id = nextXref(get().tree.individuals, "I");
-      history.apply((draft) => {
+      historyEngine.apply((draft) => {
         const indi: Individual = {
           id,
           names: name ? [name] : [{ given: "New", surname: "Person" }],
@@ -96,7 +113,7 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
     },
 
     updateIndividualName: (id, index, patch) => {
-      history.apply((draft) => {
+      historyEngine.apply((draft) => {
         const indi = draft.individuals[id];
         if (!indi) return;
         indi.names[index] = { ...indi.names[index], ...patch };
@@ -104,7 +121,7 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
     },
 
     removeIndividual: (id) => {
-      history.apply((draft) => {
+      historyEngine.apply((draft) => {
         delete draft.individuals[id];
         // Detach from any families referencing this person so the tree
         // never points at a dangling xref.
@@ -116,7 +133,69 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
       }, "Remove individual");
     },
 
-    undo: () => history.undo(),
-    redo: () => history.redo(),
+    addParent: (childId, which, name) => {
+      const { individuals, families } = get().tree;
+      const parentId = nextXref(individuals, "I");
+      // Reuse the child's existing "family as child" record if they have
+      // one (so we don't fork them into two separate families), otherwise
+      // mint a new FAM record to hold this parent link.
+      const existingFamId = individuals[childId]?.familyAsChild[0];
+      const famId = existingFamId ?? nextXref(families, "F");
+
+      historyEngine.apply((draft) => {
+        const parent: Individual = {
+          id: parentId,
+          names: name ? [name] : [{ given: "New", surname: "Person" }],
+          events: [],
+          familyAsChild: [],
+          familyAsSpouse: [famId],
+          notes: [],
+          extra: [],
+        };
+        draft.individuals[parentId] = parent;
+
+        const family: Family = draft.families[famId] ?? {
+          id: famId,
+          children: [],
+          events: [],
+          notes: [],
+          extra: [],
+        };
+        if (which === "father") family.husband = parentId;
+        else family.wife = parentId;
+        if (!family.children.includes(childId)) family.children.push(childId);
+        draft.families[famId] = family;
+
+        const child = draft.individuals[childId];
+        if (child && !child.familyAsChild.includes(famId)) child.familyAsChild.push(famId);
+      }, `Add ${which}`);
+
+      return parentId;
+    },
+
+    undo: () => historyEngine.undo(),
+    redo: () => historyEngine.redo(),
+
+    // Both jump helpers land on a state where `entryId` is the *current*
+    // entry (i.e. that edit is applied, nothing after it is) — like
+    // clicking a point in a version history and landing on that version,
+    // not the one before it.
+    undoTo: (entryId) => {
+      for (;;) {
+        const stack = get().history.undoStack;
+        const current = stack[stack.length - 1];
+        if (!current || current.id === entryId) return;
+        if (!historyEngine.undo()) return;
+      }
+    },
+
+    redoTo: (entryId) => {
+      for (;;) {
+        const stack = get().history.undoStack;
+        const current = stack[stack.length - 1];
+        if (current?.id === entryId) return;
+        if (!historyEngine.redo()) return;
+      }
+    },
   };
 });

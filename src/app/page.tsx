@@ -2,6 +2,8 @@
 
 import { useRef } from "react";
 import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
+import { PedigreeChart } from "@/components/PedigreeChart";
+import { HistoryPanel } from "@/components/HistoryPanel";
 
 export default function Home() {
   const {
@@ -11,8 +13,10 @@ export default function Home() {
     canUndo,
     canRedo,
     dirty,
+    selectedId,
     loadFromGedcomText,
     exportToGedcomText,
+    selectIndividual,
     addIndividual,
     updateIndividualName,
     removeIndividual,
@@ -42,9 +46,14 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }
 
+  function handleAddPerson() {
+    const id = addIndividual();
+    selectIndividual(id);
+  }
+
   return (
     <div className="min-h-screen bg-neutral-50 p-8 text-neutral-900">
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="mx-auto max-w-6xl space-y-6">
         <header className="space-y-1">
           <h1 className="text-2xl font-semibold">Family Tree</h1>
           <p className="text-sm text-neutral-500">
@@ -90,7 +99,7 @@ export default function Home() {
           </button>
           <div className="mx-2 h-5 w-px bg-neutral-300" />
           <button
-            onClick={() => addIndividual()}
+            onClick={handleAddPerson}
             className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium hover:bg-neutral-100"
           >
             + Add person
@@ -103,38 +112,61 @@ export default function Home() {
           </div>
         )}
 
-        <div className="divide-y divide-neutral-200 rounded-md border border-neutral-200 bg-white">
-          {individuals.length === 0 && (
-            <p className="p-6 text-center text-sm text-neutral-400">
-              No one in the tree yet. Import a GEDCOM file or add a person to get started.
-            </p>
-          )}
-          {individuals.map((indi) => (
-            <div key={indi.id} className="flex items-center gap-3 p-3">
-              <span className="w-16 shrink-0 font-mono text-xs text-neutral-400">{indi.id}</span>
-              <input
-                value={indi.names[0]?.given ?? ""}
-                onChange={(e) => updateIndividualName(indi.id, 0, { given: e.target.value })}
-                placeholder="Given name"
-                className="w-32 rounded border border-neutral-200 px-2 py-1 text-sm"
-              />
-              <input
-                value={indi.names[0]?.surname ?? ""}
-                onChange={(e) => updateIndividualName(indi.id, 0, { surname: e.target.value })}
-                placeholder="Surname"
-                className="w-32 rounded border border-neutral-200 px-2 py-1 text-sm"
-              />
-              <span className="flex-1 text-xs text-neutral-400">
-                {indi.birth?.date ? `b. ${indi.birth.date}` : ""}
-              </span>
-              <button
-                onClick={() => removeIndividual(indi.id)}
-                className="text-xs text-red-500 hover:text-red-700"
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr_260px]">
+          <div className="divide-y divide-neutral-200 rounded-md border border-neutral-200 bg-white lg:max-h-[32rem] lg:overflow-y-auto">
+            {individuals.length === 0 && (
+              <p className="p-6 text-center text-sm text-neutral-400">
+                No one in the tree yet. Import a GEDCOM file or add a person to get started.
+              </p>
+            )}
+            {individuals.map((indi) => (
+              <div
+                key={indi.id}
+                onClick={() => selectIndividual(indi.id)}
+                className={`cursor-pointer space-y-1 p-2 text-sm ${
+                  selectedId === indi.id ? "bg-neutral-100" : "hover:bg-neutral-50"
+                }`}
               >
-                Remove
-              </button>
+                <div className="flex items-center gap-2">
+                  <span className="w-12 shrink-0 font-mono text-xs text-neutral-400">{indi.id}</span>
+                  <input
+                    value={indi.names[0]?.given ?? ""}
+                    onChange={(e) => updateIndividualName(indi.id, 0, { given: e.target.value })}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="Given"
+                    className="w-20 min-w-0 rounded border border-neutral-200 px-1.5 py-1 text-xs"
+                  />
+                  <input
+                    value={indi.names[0]?.surname ?? ""}
+                    onChange={(e) => updateIndividualName(indi.id, 0, { surname: e.target.value })}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="Surname"
+                    className="w-20 min-w-0 rounded border border-neutral-200 px-1.5 py-1 text-xs"
+                  />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeIndividual(indi.id);
+                    }}
+                    className="ml-auto shrink-0 text-xs text-red-400 hover:text-red-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-md border border-neutral-200 bg-white">
+            <PedigreeChart rootId={selectedId} />
+          </div>
+
+          <div className="rounded-md border border-neutral-200 bg-white">
+            <div className="border-b border-neutral-200 px-3 py-2 text-xs font-medium text-neutral-500">
+              History
             </div>
-          ))}
+            <HistoryPanel />
+          </div>
         </div>
       </div>
     </div>
