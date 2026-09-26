@@ -248,3 +248,68 @@ test("a NOTE with its own sub-records (e.g. a citation) is kept whole", () => {
 3 PAGE p. 9`);
   assert.deepEqual(exportedLines(text, "@I1@"), ["1 NOTE Worked at the plant.", "2 SOUR @S7@", "3 PAGE p. 9"]);
 });
+
+// --- Review fixes (e8798ea..60bac88) ----------------------------------------
+
+test("a prefix that's also written in the NAME value isn't doubled when the name is edited", () => {
+  const { tree } = loadGedcom(gedcom(`
+0 @I1@ INDI
+1 NAME Dr. John /Smith/
+2 NPFX Dr.`));
+  const name = tree.individuals["@I1@"].names[0];
+  assert.equal(name.given, "John");
+  assert.equal(name.prefix, "Dr.");
+
+  applyNamePatch(name, { surname: "Smyth" });
+  const lines = saveGedcom(tree).split("\r\n");
+  assert.ok(lines.includes("1 NAME Dr. John /Smyth/"), lines.join("\n"));
+  assert.ok(lines.includes("2 NPFX Dr."));
+});
+
+test("a NAME value that is only the prefix doesn't become a given name", () => {
+  const { tree } = loadGedcom(gedcom(`
+0 @I1@ INDI
+1 NAME Dr. /Smith/
+2 NPFX Dr.`));
+  assert.equal(tree.individuals["@I1@"].names[0].given, undefined);
+});
+
+test("a SEX line with a citation is read, and changing it doesn't duplicate the line", () => {
+  const text = gedcom(`
+0 @I1@ INDI
+1 SEX M
+2 SOUR @S1@
+3 PAGE p. 2`);
+  const { tree } = loadGedcom(text);
+  assert.equal(tree.individuals["@I1@"].sex, "M");
+  assert.deepEqual(exportedLines(text, "@I1@"), ["1 SEX M", "2 SOUR @S1@", "3 PAGE p. 2"]);
+
+  // The citation backed "M", so it goes with it rather than onto the new value.
+  tree.individuals["@I1@"].sex = "F";
+  assert.match(saveGedcom(tree), /\r\n1 SEX F\r\n0 TRLR/);
+  assert.equal(saveGedcom(tree).match(/ SEX /g)?.length, 1);
+
+  tree.individuals["@I1@"].sex = "M";
+  assert.match(saveGedcom(tree), /1 SEX M\r\n2 SOUR @S1@\r\n3 PAGE p. 2/, "undoing the change brings it back");
+});
+
+test("coordinates and time stay with the place and date they came with, not a replacement value", () => {
+  const { tree } = loadGedcom(gedcom(`
+0 @I1@ INDI
+1 DEAT
+2 DATE 14 APR 1905
+3 TIME 10:30
+2 PLAC Stamford
+3 MAP
+4 LATI N41.0534`));
+  const death = tree.individuals["@I1@"].death!;
+  death.place = "Paris";
+  death.date = undefined;
+  death.date = "15 APR 1905";
+  const text = saveGedcom(tree);
+  assert.doesNotMatch(text, /MAP|LATI|TIME/);
+  assert.match(text, /1 DEAT\r\n2 DATE 15 APR 1905\r\n2 PLAC Paris\r\n/);
+
+  death.place = "Stamford";
+  assert.match(saveGedcom(tree), /2 PLAC Stamford\r\n3 MAP\r\n4 LATI N41.0534/, "undoing the change brings them back");
+});

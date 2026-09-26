@@ -41,8 +41,10 @@ Google Drive is the sync backend, and every edit is undoable/redoable.
   edits. Any GEDCOM sub-record we don't have a typed field for is kept
   verbatim — in the `extra: GedcomNode[]` bucket of the record, name or
   event it belongs to, or in a small keyed map for sub-records of lines we
-  *do* model (`EventFact.attached` for DATE/PLAC/NOTE children like MAP
-  coordinates; `familyAsChildExtra`/`familyAsSpouseExtra` for FAMC/FAMS
+  *do* model (`EventFact.attached` for DATE/PLAC children like MAP
+  coordinates and `Individual.sexAttached` for a citation on SEX, both
+  tied to the value they came with; `RepositoryRef.callNumberExtra` for
+  CALN's MEDI; `familyAsChildExtra`/`familyAsSpouseExtra` for FAMC/FAMS
   children like `PEDI adopted`; `Family.memberExtra` for HUSB/WIFE/CHIL
   children like Ancestry's `_FREL`/`_MREL`). Importing a file from
   Ancestry/FamilySearch/Gramps and re-exporting loses nothing — unmodeled
@@ -57,7 +59,16 @@ Google Drive is the sync backend, and every edit is undoable/redoable.
     until a name part changes. **Edit names only via `applyNamePatch`**,
     which clears `full` so export rebuilds the value from parts. Parts
     derived from the value (no GIVN/SURN/NSFX line in the file) are listed
-    in `NameParts.derived` and not written out as new lines.
+    in `NameParts.derived` and not written out as new lines. A given name
+    derived from "Dr. John /Smith/" when the file also has `NPFX Dr.`
+    drops the prefix, since the rebuilt value adds it back (it used to
+    come out as "Dr. Dr. John").
+  - Sub-records of a line lifted into a typed field (PLAC's MAP, DATE's
+    TIME, SEX's SOUR) describe *that value* (`AttachedLines`). They're
+    written back only while the field still holds it: changing London to
+    Paris drops London's coordinates rather than moving them to Paris, and
+    undoing the change brings them back. CALN's MEDI is the exception: it
+    describes the item held, so it survives a corrected call number.
   - CONC wrapping only splits between two non-space characters (and never
     inside a surrogate pair); the parser keeps a line's trailing space when
     the next line is a CONC. Previously ~1 in 6 wrap points in long notes
@@ -94,7 +105,9 @@ they can't miss a container: `noteUsage`, and in `sourceUsage.ts`
 References the model can't reach (SOURs in unmodelled records or
 verbatim `extra`) are counted as "all pointers in the exported nodes
 minus modelled ones", which needs no list of verbatim buckets. They're
-shown in warnings and never deleted.
+shown in warnings and never deleted. "Make private copy" leaves the shared note's
+own bookkeeping (CHAN, RIN, REFN, UIDs) on the record: those aren't valid
+under an inline note, and a copied UID would clash.
 `citations.ts` holds the pure helpers the citations UI uses:
 `describeCitation` (the one-line summary and ok/unpointed/missing status),
 `searchSources`, `newSource` and `promoteToSource`. The UI

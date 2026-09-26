@@ -59,6 +59,12 @@ export interface RepositoryRef {
   repoId: string;
   /** CALN — the source's call number within that repository. */
   callNumber?: string;
+  /**
+   * Sub-records of the CALN line (MEDI: book, microfilm, ...). They describe
+   * the item held rather than the number, so a corrected number keeps them;
+   * they're written for as long as there's a call number to hang them on.
+   */
+  callNumberExtra?: GedcomNode[];
   extra?: GedcomNode[];
 }
 
@@ -194,6 +200,9 @@ export function noteToNode(note: Note, level: number): GedcomNode {
   return line(level, "NOTE", note.text, noteChildren(note, level + 1));
 }
 
+/** Tags that identify or track a record rather than say anything about its content. */
+const RECORD_BOOKKEEPING_TAGS = new Set(["CHAN", "CREA", "RIN", "REFN", "RFN", "AFN", "UID", "_UID", "EXID"]);
+
 /**
  * An inline note with the same text, citations and verbatim sub-records as
  * a shared note, fully independent of it. Swapping a link for this lets one
@@ -202,8 +211,11 @@ export function noteToNode(note: Note, level: number): GedcomNode {
  */
 export function privateCopyOf(shared: SharedNote, link?: NoteLink): InlineNote {
   const copy: InlineNote = { text: shared.text, citations: structuredClone(shared.citations) };
+  // The record's own bookkeeping stays with the record: it isn't valid under
+  // an inline note, and a copied unique id would clash with the original's.
+  const content = (shared.extra ?? []).filter((n) => !RECORD_BOOKKEEPING_TAGS.has(n.tag));
   // Anything that hung off the link line itself would otherwise be lost with it.
-  const extra = [...(shared.extra ?? []), ...(link?.extra ?? [])];
+  const extra = [...content, ...(link?.extra ?? [])];
   if (extra.length > 0) copy.extra = structuredClone(extra);
   return copy;
 }
@@ -254,8 +266,10 @@ function parseRepositoryRef(node: GedcomNode & { value: string }): RepositoryRef
   const ref: RepositoryRef = { repoId: node.value };
   const extra: GedcomNode[] = [];
   for (const child of node.children) {
-    if (child.tag === "CALN" && isSimple(child) && ref.callNumber === undefined) ref.callNumber = child.value;
-    else extra.push(child);
+    if (child.tag === "CALN" && child.value && ref.callNumber === undefined) {
+      ref.callNumber = child.value;
+      if (child.children.length > 0) ref.callNumberExtra = child.children;
+    } else extra.push(child);
   }
   if (extra.length > 0) ref.extra = extra;
   return ref;
@@ -269,7 +283,7 @@ export function sourceToNode(source: Source): GedcomNode {
   }
   for (const ref of source.repositories) {
     const refChildren: GedcomNode[] = [];
-    if (ref.callNumber) refChildren.push(line(2, "CALN", ref.callNumber));
+    if (ref.callNumber) refChildren.push(line(2, "CALN", ref.callNumber, atLevel(ref.callNumberExtra ?? [], 3)));
     refChildren.push(...atLevel(ref.extra ?? [], 2));
     children.push(line(1, "REPO", ref.repoId, refChildren));
   }

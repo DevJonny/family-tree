@@ -332,3 +332,40 @@ test("a private copy keeps sub-records that were on the link itself", () => {
     extra: [{ level: 2, tag: "_PRIV", value: "Y", children: [] }],
   });
 });
+
+test("a call number with a MEDI under it is read, and editing it keeps one CALN line", () => {
+  const { tree } = loadGedcom(gedcom("0 @S1@ SOUR", "1 REPO @R1@", "2 CALN 123", "3 MEDI Book", "0 @R1@ REPO"));
+  const ref = tree.sources["@S1@"].repositories[0];
+  assert.equal(ref.callNumber, "123");
+  assert.match(saveGedcom(tree), /1 REPO @R1@\r\n2 CALN 123\r\n3 MEDI Book\r\n0 @R1@/);
+
+  // MEDI is the kind of item held (a book), so it stays when the number is corrected.
+  ref.callNumber = "456";
+  assert.match(saveGedcom(tree), /1 REPO @R1@\r\n2 CALN 456\r\n3 MEDI Book\r\n0 @R1@/);
+
+  delete ref.callNumber;
+  assert.doesNotMatch(saveGedcom(tree), /CALN|MEDI/);
+});
+
+test("a private copy leaves out the shared record's own bookkeeping (CHAN, RIN, REFN, UIDs)", () => {
+  const { tree } = loadGedcom(
+    gedcom(
+      "0 @I1@ INDI",
+      "1 NOTE @N1@",
+      "0 @N1@ NOTE Shared.",
+      "1 CHAN",
+      "2 DATE 1 JAN 2020",
+      "1 RIN 7",
+      "1 REFN X-1",
+      "1 _UID ABC",
+      "1 UID 0123",
+      "1 EXID 99",
+      "1 LANG English",
+    ),
+  );
+  const copy = privateCopyOf(tree.notes["@N1@"]);
+  assert.deepEqual(
+    copy.extra?.map((n) => n.tag),
+    ["LANG"],
+  );
+});

@@ -76,6 +76,22 @@ type NamePartTag = keyof typeof NAME_PART_TAGS;
 /** The DATE/PLAC lines of an event, lifted into typed fields. */
 type LiftedEventTag = "DATE" | "PLAC";
 
+/**
+ * Sub-records of a line we lift into a typed field (a place's MAP
+ * coordinates, a date's TIME, a citation for a SEX), kept with the value
+ * they were imported under. They describe *that* value, so they're written
+ * back only while the field still holds it: change or clear the field and
+ * they're left out, and changing it back (e.g. undo) brings them back.
+ */
+export interface AttachedLines {
+  value: string;
+  children: GedcomNode[];
+}
+
+function attachedFor(attached: AttachedLines | undefined, value: string): GedcomNode[] {
+  return attached?.value === value ? attached.children : [];
+}
+
 export interface EventFact {
   tag: string;
   /** The tag's own line value, e.g. "Farmer" for `1 OCCU Farmer`. */
@@ -86,10 +102,9 @@ export interface EventFact {
   notes?: Note[];
   /**
    * Sub-records hanging off the DATE/PLAC line itself — e.g. a place's
-   * MAP/LATI/LONG coordinates or a date's TIME. Kept (and re-attached) for
-   * as long as that field is non-empty; clearing the field drops them.
+   * MAP/LATI/LONG coordinates or a date's TIME. See `AttachedLines`.
    */
-  attached?: Partial<Record<LiftedEventTag, GedcomNode[]>>;
+  attached?: Partial<Record<LiftedEventTag, AttachedLines>>;
   /** Omitted when there are none, like `extra`. */
   citations?: Citation[];
   /** Any other sub-records (AGE, TYPE, ...), preserved as-is. */
@@ -102,6 +117,8 @@ export interface Individual {
   id: string;
   names: NameParts[];
   sex?: Sex;
+  /** Sub-records of the SEX line (e.g. a citation). See `AttachedLines`. */
+  sexAttached?: AttachedLines;
   birth?: EventFact;
   death?: EventFact;
   events: EventFact[];
@@ -213,10 +230,28 @@ function parseName(nameNode: GedcomNode): NameParts {
       }
     }
     if (derived.length > 0) parts.derived = derived;
+    // "Dr. John /Smith/" with `NPFX Dr.`: the prefix is its own part, and
+    // the rebuilt value adds it back, so it mustn't also be in the given name.
+    if (derived.includes("given") && parts.prefix) {
+      const rest = withoutLeadingWord(parts.given!, parts.prefix);
+      if (rest === "") {
+        delete parts.given;
+        parts.derived = derived.filter((p) => p !== "given");
+        if (parts.derived.length === 0) delete parts.derived;
+      } else if (rest !== undefined) {
+        parts.given = rest;
+      }
+    }
   }
 
   if (extra.length > 0) parts.extra = extra;
   return parts;
+}
+
+/** `text` without a leading `word` (and the space after it), or undefined if it doesn't start with it. */
+function withoutLeadingWord(text: string, word: string): string | undefined {
+  if (text === word) return "";
+  return text.startsWith(`${word} `) ? text.slice(word.length).trim() : undefined;
 }
 
 /** Rebuilds a NAME line value from parts: "Prefix Given /Surname/ Suffix". */
@@ -284,7 +319,7 @@ function parseEvent(node: GedcomNode): EventFact {
     if (field && child.value && event[field] === undefined) {
       event[field] = child.value;
       if (child.children.length > 0) {
-        event.attached = { ...event.attached, [child.tag]: child.children };
+        event.attached = { ...event.attached, [child.tag]: { value: child.value, children: child.children } };
       }
     } else if (child.tag === "NOTE") {
       (event.notes ??= []).push(parseNote(child));
@@ -304,7 +339,7 @@ function eventToGedcomNode(level: number, event: EventFact): GedcomNode {
   for (const [tag, field] of Object.entries(LIFTED_EVENT_FIELDS) as [LiftedEventTag, "date" | "place"][]) {
     const value = event[field];
     if (!value) continue;
-    children.push({ level: level + 1, tag, value, children: event.attached?.[tag] ?? [] });
+    children.push({ level: level + 1, tag, value, children: attachedFor(event.attached?.[tag], value) });
   }
   for (const note of event.notes ?? []) children.push(noteToNode(note, level + 1));
   for (const citation of event.citations ?? []) children.push(citationToNode(citation, level + 1));
@@ -389,8 +424,9 @@ function buildIndividual(node: GedcomNode): Individual {
         indi.names.push(parseName(child));
         continue;
       case "SEX":
-        if (indi.sex === undefined && child.children.length === 0 && isSex(value)) {
+        if (indi.sex === undefined && isSex(value)) {
           indi.sex = value;
+          if (child.children.length > 0) indi.sexAttached = { value, children: child.children };
           continue;
         }
         break; // unrecognised value or duplicate: keep verbatim
@@ -539,7 +575,7 @@ function pointerNode(tag: string, value: string, extra: Record<string, GedcomNod
 function individualToGedcomNode(indi: Individual): GedcomNode {
   const children: GedcomNode[] = [];
   for (const name of indi.names) children.push(nameToGedcomNode(name));
-  if (indi.sex) children.push({ level: 1, tag: "SEX", value: indi.sex, children: [] });
+  if (indi.sex) children.push({ level: 1, tag: "SEX", value: indi.sex, children: attachedFor(indi.sexAttached, indi.sex) });
   if (indi.birth) children.push(eventToGedcomNode(1, indi.birth));
   if (indi.death) children.push(eventToGedcomNode(1, indi.death));
   for (const event of indi.events) children.push(eventToGedcomNode(1, event));

@@ -29,6 +29,8 @@
 2 CONT - A person with an unknown sex and no given name, a family with no known mother,
 2 CONT   a divorce, a remarriage, an adoption, married/aka names, NPFX/NSFX/NICK, MAP coordinates.
 2 CONT - Non-ASCII place names (Bø, Kraków) and a gap in family ids (no @F9@).
+2 CONT - A prefix written both in the NAME value and as NPFX, a SEX line with a citation,
+2 CONT   a CALN with a MEDI under it, and a shared NOTE with its own CHAN and _UID.
 0 @U1@ SUBM
 1 NAME Reldon Poulson
 1 ADDR
@@ -231,9 +233,8 @@
 1 FAMS @F3@
 1 RIN 5
 0 @I6@ INDI
-1 NAME Evan /Williams/
+1 NAME Rev. Evan /Williams/
 2 NPFX Rev.
-2 GIVN Evan
 2 SURN Williams
 1 SEX M
 1 BAPM
@@ -255,6 +256,8 @@
 2 GIVN Margaret
 2 SURN Jones
 1 SEX F
+2 SOUR @S4@
+3 PAGE Burial of Margaret, wife of Thomas
 1 BIRT
 2 DATE EST 1755
 2 SOUR Recollection of Hannah Pryce, as told to her grandson, recorded about 1840
@@ -580,6 +583,7 @@
 1 ABBR Madison BMD Records
 1 REPO @R1@
 2 CALN 13B-1234.01
+3 MEDI Microfilm
 0 @S2@ SOUR
 1 TITL 1850 United States Federal Census
 1 AUTH Ancestry.com
@@ -654,6 +658,9 @@
 1 CONT The Williams family came from Llanfair, Montgomeryshire. Rev. Evan Williams was curate there;
 1 CONT his son Thomas emigrated via Liverpool in 1819 and settled in Weston, Connecticut.
 1 CONT Welsh patronymic naming means earlier generations may not use Williams as a fixed surname.
+1 _UID 5B1F0C2E-7A4D-4E1B-9C3A-2D6E8F0A1B2C
+1 CHAN
+2 DATE 3 MAR 2024
 0 @N2@ NOTE Census and death-record ages for Robert are consistent with a 1822 birth; Mary Ann's
 1 CONC  age in 1850 (22) puts her birth before 1828, hence the BEF 1828 date.
 0 @N3@ NOTE Robert and Mary Ann's marriage place (Rapid City, SD) is copied from the original

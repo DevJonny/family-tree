@@ -88,7 +88,8 @@ test("a private copy of a shared note replaces the link with an independent inli
   assert.deepEqual(store().tree.individuals["@I2@"].notes, [{ noteId: "@N1@" }], "other links are untouched");
 
   const out = store().exportToGedcomText();
-  assert.match(out, /0 @I1@ INDI\r\n1 NOTE Reworded for Robert only.\r\n2 SOUR @S1@\r\n3 PAGE p. 1\r\n2 RIN 7\r\n/);
+  // RIN is the shared record's own bookkeeping, so it stays there.
+  assert.match(out, /0 @I1@ INDI\r\n1 NOTE Reworded for Robert only.\r\n2 SOUR @S1@\r\n3 PAGE p. 1\r\n0 @I2@/);
   assert.match(out, /0 @N1@ NOTE Shared research.\r\n1 SOUR @S1@\r\n2 PAGE p. 1\r\n1 RIN 7\r\n/);
 
   store().undo();
