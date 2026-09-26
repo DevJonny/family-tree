@@ -53,6 +53,18 @@ export function searchSources(tree: FamilyTree, query: string): Source[] {
   });
 }
 
+/**
+ * The source whose whole title or abbreviation is `text` (ignoring case and
+ * surrounding spaces), if any. A partial match doesn't count: typing
+ * "Census" and pressing Enter means a new source called "Census", not the
+ * first source with "Census" somewhere in its title.
+ */
+export function exactSourceMatch(sources: Source[], text: string): Source | undefined {
+  const t = text.trim().toLowerCase();
+  if (!t) return undefined;
+  return sources.find((s) => [s.title, s.abbreviation].some((field) => field?.trim().toLowerCase() === t));
+}
+
 /** An empty source record, optionally titled. Pair with `nextFreeId(tree, "S")` for a new id. */
 export function newSource(id: string, title?: string): Source {
   const source: Source = { id, repositories: [], notes: [] };

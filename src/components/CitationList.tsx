@@ -11,6 +11,7 @@ import {
   nextFreeId,
   promoteToSource,
   QUALITY_LABELS,
+  exactSourceMatch,
   searchSources,
   sourceDisplayTitle,
   type Citation,
@@ -249,8 +250,26 @@ function CitePicker({
   const tree = useFamilyTreeStore((s) => s.tree);
   // A search box, not a field of the tree: nothing reaches the store until a pick.
   const [query, setQuery] = useState("");
-  const results = useMemo(() => searchSources(tree, query).slice(0, 8), [tree, query]);
   const typed = query.trim();
+  const { results, exact } = useMemo(() => {
+    const all = searchSources(tree, query);
+    const exact = exactSourceMatch(all, query);
+    const top = all.slice(0, 8);
+    // Always list the exact match, since Enter picks it.
+    return { results: exact && !top.includes(exact) ? [exact, ...top.slice(0, 7)] : top, exact };
+  }, [tree, query]);
+
+  // The options in list order: each result, then "Create" when something's typed.
+  // Enter takes the highlighted one: an exact title match by default,
+  // otherwise "Create", and the arrow keys move the highlight.
+  const optionCount = results.length + (typed ? 1 : 0);
+  const defaultIndex = exact ? results.indexOf(exact) : typed ? results.length : -1;
+  const [moved, setMoved] = useState<number | null>(null);
+  const active = moved ?? defaultIndex;
+  const choose = (index: number) => {
+    if (index >= 0 && index < results.length) onPick(results[index].id, sourceDisplayTitle(results[index]));
+    else if (index === results.length && typed) onCreate(typed);
+  };
 
   return (
     <div className="space-y-1 rounded border border-blue-200 bg-blue-50/40 p-2 text-xs">
@@ -258,12 +277,18 @@ function CitePicker({
         <input
           autoFocus
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setMoved(null);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Escape") onClose();
-            if (e.key === "Enter" && typed) {
-              if (results[0]) onPick(results[0].id, sourceDisplayTitle(results[0]));
-              else onCreate(typed);
+            if (e.key === "Enter") choose(active);
+            if ((e.key === "ArrowDown" || e.key === "ArrowUp") && optionCount > 0) {
+              e.preventDefault();
+              const step = e.key === "ArrowDown" ? 1 : -1;
+              const from = active >= 0 ? active : step > 0 ? -1 : optionCount;
+              setMoved((from + step + optionCount) % optionCount);
             }
           }}
           placeholder="Search sources, or type a new title…"
@@ -274,11 +299,11 @@ function CitePicker({
         </button>
       </div>
       <ul className="max-h-48 overflow-y-auto">
-        {results.map((source) => (
+        {results.map((source, i) => (
           <li key={source.id}>
             <button
               onClick={() => onPick(source.id, sourceDisplayTitle(source))}
-              className="w-full truncate rounded px-1 py-0.5 text-left hover:bg-blue-100"
+              className={`w-full truncate rounded px-1 py-0.5 text-left hover:bg-blue-100 ${i === active ? "bg-blue-100" : ""}`}
             >
               {sourceDisplayTitle(source)}
               {source.author && <span className="text-neutral-500"> · {source.author}</span>}
@@ -290,7 +315,7 @@ function CitePicker({
           <li>
             <button
               onClick={() => onCreate(typed)}
-              className="w-full truncate rounded px-1 py-0.5 text-left text-blue-700 hover:bg-blue-100"
+              className={`w-full truncate rounded px-1 py-0.5 text-left text-blue-700 hover:bg-blue-100 ${active === results.length ? "bg-blue-100" : ""}`}
             >
               + Create source “{typed}”
             </button>

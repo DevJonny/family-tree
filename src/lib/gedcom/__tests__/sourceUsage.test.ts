@@ -8,6 +8,7 @@ import {
   deleteRepository,
   deleteSource,
   loadGedcom,
+  pointerCounts,
   repositoryAddress,
   repositoryUsage,
   saveGedcom,
@@ -242,4 +243,18 @@ test("the extended fixture: @S9@ is unused, @S99@ is dangling, and deleting @S2@
   const next = produce(tree, (d) => deleteSource(d, "@S2@"));
   assert.doesNotMatch(saveGedcom(next), /@S2@/);
   assert.equal(saveGedcom(tree), before, "the recipe didn't touch the original");
+});
+
+test("pointerCounts counts every pointer in the file once per tree version, however many rows ask", () => {
+  const { tree } = loadGedcom(
+    gedcom("0 @I1@ INDI", "1 SOUR @S1@", "1 _CUSTOM @S1@", "0 @S1@ SOUR", "1 REPO @R1@", "0 @R1@ REPO", "0 @X1@ _VENDOR", "1 SOUR @S1@"),
+  );
+  const counts = pointerCounts(tree);
+  assert.equal(counts.get("@S1@"), 3);
+  assert.equal(counts.get("@R1@"), 1);
+  assert.equal(pointerCounts(tree), counts, "the same tree reuses the same pass");
+
+  const edited = produce(tree, (d) => void d.individuals["@I1@"].citations.pop());
+  assert.notEqual(pointerCounts(edited), counts, "an edited tree is counted afresh");
+  assert.equal(pointerCounts(edited).get("@S1@"), 2);
 });

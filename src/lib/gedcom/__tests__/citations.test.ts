@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { describeCitation, labelForEventTag, loadGedcom, searchSources } from "../index";
+import { describeCitation, exactSourceMatch, labelForEventTag, loadGedcom, searchSources } from "../index";
 
 function gedcom(...lines: string[]): string {
   return ["0 HEAD", "1 CHAR UTF-8", ...lines, "0 TRLR", ""].join("\n");
@@ -77,4 +77,21 @@ test("searchSources matches title or abbreviation, ignoring case, sorted by titl
     ["@S2@", "@S1@", "@S3@", "@S4@"],
     "a blank query lists everything; untitled sources sort last",
   );
+});
+
+test("exactSourceMatch finds a source only when what was typed is its whole title or abbreviation", () => {
+  const { tree } = loadGedcom(
+    gedcom(
+      "0 @S1@ SOUR",
+      "1 TITL 1851 Census of England",
+      "0 @S2@ SOUR",
+      "1 TITL Parish Registers of St Mary, Llanfair",
+      "1 ABBR Llanfair PR",
+    ),
+  );
+  const all = searchSources(tree, "");
+  assert.equal(exactSourceMatch(all, "Census"), undefined, "a partial match is a new title, not this source");
+  assert.equal(exactSourceMatch(all, "  1851 census of england ")?.id, "@S1@");
+  assert.equal(exactSourceMatch(all, "llanfair pr")?.id, "@S2@");
+  assert.equal(exactSourceMatch(all, ""), undefined);
 });

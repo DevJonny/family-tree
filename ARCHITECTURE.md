@@ -105,7 +105,10 @@ they can't miss a container: `noteUsage`, and in `sourceUsage.ts`
 References the model can't reach (SOURs in unmodelled records or
 verbatim `extra`) are counted as "all pointers in the exported nodes
 minus modelled ones", which needs no list of verbatim buckets. They're
-shown in warnings and never deleted. "Make private copy" leaves the shared note's
+shown in warnings and never deleted. That's a full export, so
+`pointerCounts` does it once per tree version (cached in a `WeakMap`,
+safe because trees are never mutated in place) rather than once per
+Sources-tab row per render. "Make private copy" leaves the shared note's
 own bookkeeping (CHAN, RIN, REFN, UIDs) on the record: those aren't valid
 under an inline note, and a copied UID would clash.
 `citations.ts` holds the pure helpers the citations UI uses:

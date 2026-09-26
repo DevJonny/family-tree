@@ -115,21 +115,33 @@ export function citationCounts(tree: FamilyTree): Record<string, number> {
   return counts;
 }
 
+const pointerCountCache = new WeakMap<FamilyTree, Map<string, number>>();
+
 /**
- * How many lines anywhere in the exported file point at `id`. Walks the
+ * How many lines anywhere in the exported file point at each id. Walks the
  * exported nodes like `nextFreeId`, so verbatim sub-records and unmodelled
  * records are included; subtracting the modelled references leaves the
  * ones the app can't edit, without having to know every verbatim bucket.
+ *
+ * That's a full export, and the Sources tab asks on every render (once per
+ * source and repository row), so it's done once per tree version: trees are
+ * never mutated in place (every edit makes a new one), so a cached answer
+ * can't go stale.
  */
-function pointerCount(tree: FamilyTree, id: string): number {
-  let n = 0;
+export function pointerCounts(tree: FamilyTree): Map<string, number> {
+  const cached = pointerCountCache.get(tree);
+  if (cached) return cached;
+  const counts = new Map<string, number>();
   const walk = (node: GedcomNode) => {
-    if (isPointer(node.value) && node.value === id) n += 1;
+    if (isPointer(node.value)) counts.set(node.value, (counts.get(node.value) ?? 0) + 1);
     node.children.forEach(walk);
   };
   familyTreeToGedcomNodes(tree).forEach(walk);
-  return n;
+  pointerCountCache.set(tree, counts);
+  return counts;
 }
+
+const pointerCount = (tree: FamilyTree, id: string) => pointerCounts(tree).get(id) ?? 0;
 
 /**
  * Deletes a source and every citation of it the model can reach (on
