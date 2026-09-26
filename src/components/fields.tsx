@@ -46,11 +46,13 @@ export function TextField({
   value,
   onChange,
   placeholder,
+  autoFocus,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  autoFocus?: boolean;
 }) {
   const { draft, setDraft, commit, onKeyDown } = useCommittedInput(value, onChange);
   return (
@@ -62,6 +64,7 @@ export function TextField({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={onKeyDown}
+        autoFocus={autoFocus}
         className="rounded border border-neutral-200 px-2 py-1 text-sm text-neutral-900"
       />
     </label>

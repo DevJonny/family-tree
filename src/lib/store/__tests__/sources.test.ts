@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { useFamilyTreeStore } from "../familyTreeStore";
-import { isNoteLink, privateCopyOf } from "../../gedcom";
+import { isNoteLink, newSource, nextFreeId, privateCopyOf, promoteToSource } from "../../gedcom";
 
 const store = () => useFamilyTreeStore.getState();
 
@@ -94,4 +94,55 @@ test("a private copy of a shared note replaces the link with an independent inli
   store().undo();
   store().undo();
   assert.deepEqual(store().tree.individuals["@I1@"].notes, [{ noteId: "@N1@" }]);
+});
+
+test("citing a brand-new source creates the source and the citation as one undo step", () => {
+  load("0 @I1@ INDI", "1 BIRT", "0 @S1@ SOUR", "1 TITL Existing");
+  const before = store().history.undoStack.length;
+
+  const id = nextFreeId(store().tree, "S");
+  store().updateTree((d) => {
+    d.sources[id] = newSource(id, "Williams Family Bible");
+    d.individuals["@I1@"].birth!.citations = [{ sourceId: id, notes: [] }];
+  }, "Cite new source");
+
+  assert.equal(id, "@S2@");
+  assert.equal(store().tree.sources["@S2@"].title, "Williams Family Bible");
+  assert.match(store().exportToGedcomText(), /0 @S2@ SOUR\r\n1 TITL Williams Family Bible\r\n/);
+  assert.equal(store().history.undoStack.length, before + 1);
+
+  store().undo();
+  assert.equal(store().tree.sources["@S2@"], undefined);
+  assert.equal(store().tree.individuals["@I1@"].birth!.citations, undefined);
+});
+
+test("an unpointed citation can be made into a source; a dangling one can have its source created", () => {
+  load(
+    "0 @I1@ INDI",
+    "1 BIRT",
+    "2 SOUR Recollection of Hannah Pryce",
+    "3 NOTE As told to her grandson.",
+    "1 DEAT",
+    "2 SOUR @S99@",
+    "3 PAGE Burials 1825",
+  );
+
+  const id = nextFreeId(store().tree, "S");
+  store().updateTree((d) => {
+    d.sources[id] = promoteToSource(d.individuals["@I1@"].birth!.citations![0], id);
+  }, "Make citation into source");
+
+  const birthCitation = store().tree.individuals["@I1@"].birth!.citations![0];
+  assert.equal(birthCitation.sourceId, id);
+  assert.equal(birthCitation.description, undefined);
+  assert.deepEqual(birthCitation.notes, [{ text: "As told to her grandson.", citations: [] }], "the citation keeps its notes");
+  assert.equal(store().tree.sources[id].title, "Recollection of Hannah Pryce");
+
+  store().updateTree((d) => void (d.sources["@S99@"] = newSource("@S99@")), "Create missing source");
+  assert.deepEqual(store().tree.sources["@S99@"], { id: "@S99@", repositories: [], notes: [] });
+  assert.match(store().exportToGedcomText(), /0 @S99@ SOUR\r\n/);
+
+  store().undo();
+  store().undo();
+  assert.equal(store().tree.individuals["@I1@"].birth!.citations![0].description, "Recollection of Hannah Pryce");
 });

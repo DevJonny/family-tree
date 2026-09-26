@@ -4,9 +4,11 @@ import { useState } from "react";
 import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import { INDIVIDUAL_EVENT_TAGS, labelForEventTag } from "@/lib/gedcom/eventTags";
 import { TextField } from "@/components/fields";
-import { NoteRow } from "@/components/NoteRow";
-import { applyNamePatch, type EventFact, type NameParts, type Sex } from "@/lib/gedcom/model";
-import { isNoteLink } from "@/lib/gedcom/sources";
+import type { Draft } from "immer";
+import { applyNamePatch, type EventFact, type FamilyTree, type NameParts, type Sex } from "@/lib/gedcom/model";
+import type { Citation, Note } from "@/lib/gedcom/sources";
+import { CitationList } from "@/components/CitationList";
+import { NoteList } from "@/components/NoteRow";
 
 const SEX_OPTIONS: { value: Sex | ""; label: string }[] = [
   { value: "", label: "Unknown" },
@@ -58,30 +60,70 @@ function NameFields({
   );
 }
 
+/**
+ * The citations and notes under one fact or name, indented so it's clear
+ * which fact they belong to.
+ */
+function FactSources({
+  ownerId,
+  what,
+  citations,
+  locateCitations,
+  notes,
+  locateNotes,
+}: {
+  ownerId: string;
+  what: string;
+  citations: Citation[] | undefined;
+  locateCitations: (d: Draft<FamilyTree>) => Citation[];
+  notes?: Note[];
+  locateNotes?: (d: Draft<FamilyTree>) => Note[];
+}) {
+  return (
+    <div className="ml-1 space-y-1 border-l-2 border-neutral-100 pl-2">
+      <CitationList citations={citations} locate={locateCitations} ownerId={ownerId} what={what} />
+      {locateNotes && <NoteList notes={notes} locate={locateNotes} ownerId={ownerId} compact />}
+    </div>
+  );
+}
+
+/** An alternate BIRT/DEAT (a second one, common in Ancestry exports) reads better with a prefix. */
+function otherEventLabel(tag: string): string {
+  const label = labelForEventTag(tag);
+  return tag === "BIRT" || tag === "DEAT" ? `Alternate ${label.toLowerCase()}` : label;
+}
+
 export function PersonDetailPanel({ id }: { id: string }) {
   const tree = useFamilyTreeStore((s) => s.tree);
   const updateIndividual = useFamilyTreeStore((s) => s.updateIndividual);
   const [newEventTag, setNewEventTag] = useState(INDIVIDUAL_EVENT_TAGS[0].tag);
-  const [newNote, setNewNote] = useState("");
 
   const individual = tree.individuals[id];
   if (!individual) return null;
+  const person = (d: Draft<FamilyTree>) => d.individuals[id];
 
   return (
     <div className="space-y-5 p-4 text-sm">
       <section className="space-y-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Names</h3>
         {individual.names.map((name, i) => (
-          <NameFields
-            key={i}
-            name={name}
-            onChange={(patch) =>
-              updateIndividual(id, (d) => applyNamePatch(d.names[i], patch), "Edit name")
-            }
-            onRemove={() =>
-              updateIndividual(id, (d) => void d.names.splice(i, 1), "Remove name")
-            }
-          />
+          <div key={i} className="space-y-1">
+            <NameFields
+              name={name}
+              onChange={(patch) =>
+                updateIndividual(id, (d) => applyNamePatch(d.names[i], patch), "Edit name")
+              }
+              onRemove={() =>
+                updateIndividual(id, (d) => void d.names.splice(i, 1), "Remove name")
+              }
+            />
+            <FactSources
+              ownerId={id}
+              what="name"
+              citations={name.citations}
+              locateCitations={(d) => (person(d).names[i].citations ??= [])}
+            />
+          </div>
         ))}
         <button
           onClick={() =>
@@ -142,6 +184,14 @@ export function PersonDetailPanel({ id }: { id: string }) {
             }
           />
         </div>
+        <FactSources
+          ownerId={id}
+          what="birth"
+          citations={individual.birth?.citations}
+          locateCitations={(d) => ((person(d).birth ??= { tag: "BIRT" }).citations ??= [])}
+          notes={individual.birth?.notes}
+          locateNotes={(d) => ((person(d).birth ??= { tag: "BIRT" }).notes ??= [])}
+        />
       </section>
 
       <section className="space-y-2">
@@ -170,13 +220,21 @@ export function PersonDetailPanel({ id }: { id: string }) {
             }
           />
         </div>
+        <FactSources
+          ownerId={id}
+          what="death"
+          citations={individual.death?.citations}
+          locateCitations={(d) => ((person(d).death ??= { tag: "DEAT" }).citations ??= [])}
+          notes={individual.death?.notes}
+          locateNotes={(d) => ((person(d).death ??= { tag: "DEAT" }).notes ??= [])}
+        />
       </section>
 
       <section className="space-y-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Other events</h3>
         {individual.events.map((event, i) => (
           <div key={i} className="space-y-1">
-            <div className="text-xs font-medium text-neutral-600">{labelForEventTag(event.tag)}</div>
+            <div className="text-xs font-medium text-neutral-600">{otherEventLabel(event.tag)}</div>
             <EventFields
               event={event}
               onChange={(patch) =>
@@ -185,6 +243,14 @@ export function PersonDetailPanel({ id }: { id: string }) {
               onRemove={() =>
                 updateIndividual(id, (d) => void d.events.splice(i, 1), "Remove event")
               }
+            />
+            <FactSources
+              ownerId={id}
+              what={otherEventLabel(event.tag).toLowerCase()}
+              citations={event.citations}
+              locateCitations={(d) => (person(d).events[i].citations ??= [])}
+              notes={event.notes}
+              locateNotes={(d) => (person(d).events[i].notes ??= [])}
             />
           </div>
         ))}
@@ -217,47 +283,18 @@ export function PersonDetailPanel({ id }: { id: string }) {
 
       <section className="space-y-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Notes</h3>
-        {individual.notes.map((note, i) => (
-          <NoteRow
-            // Keyed by kind too, so swapping a link for a private copy remounts the field.
-            key={`${i}-${isNoteLink(note) ? note.noteId : "inline"}`}
-            note={note}
-            ownerId={id}
-            onEditText={(text) =>
-              updateIndividual(
-                id,
-                (d) => {
-                  const draftNote = d.notes[i];
-                  if (!isNoteLink(draftNote)) draftNote.text = text;
-                },
-                "Edit note",
-              )
-            }
-            onReplace={(next) => updateIndividual(id, (d) => void (d.notes[i] = next), "Make private copy of note")}
-            onRemove={() =>
-              updateIndividual(id, (d) => void d.notes.splice(i, 1), isNoteLink(note) ? "Unlink shared note" : "Remove note")
-            }
-          />
-        ))}
-        <div className="flex items-start gap-2">
-          <textarea
-            value={newNote}
-            onChange={(e) => setNewNote(e.target.value)}
-            placeholder="Add a note…"
-            rows={2}
-            className="flex-1 rounded border border-neutral-200 px-2 py-1 text-sm"
-          />
-          <button
-            onClick={() => {
-              if (!newNote.trim()) return;
-              updateIndividual(id, (d) => void d.notes.push({ text: newNote, citations: [] }), "Add note");
-              setNewNote("");
-            }}
-            className="text-xs text-blue-600 hover:underline"
-          >
-            + Add
-          </button>
-        </div>
+        <NoteList notes={individual.notes} locate={(d) => person(d).notes} ownerId={id} />
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Other citations</h3>
+        <p className="text-xs text-neutral-400">Sources for this person as a whole rather than one fact.</p>
+        <CitationList
+          citations={individual.citations}
+          locate={(d) => person(d).citations}
+          ownerId={id}
+          what="person"
+        />
       </section>
     </div>
   );

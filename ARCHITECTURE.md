@@ -85,6 +85,13 @@ the file. The store uses it for people and families too.
 `walk.ts` (`walkTree`) is the one place that knows every container a
 note or citation can live in. Usage counts (`noteUsage`, and later
 "Cited by") and cascading deletes are built on it, so they can't miss one.
+`citations.ts` holds the pure helpers the citations UI uses:
+`describeCitation` (the one-line summary and ok/unpointed/missing status),
+`searchSources`, `newSource` and `promoteToSource`. The UI
+(`CitationList`, `NoteList`) takes a `locate(draft)` function that finds
+its list inside a draft tree, so every edit is one `updateTree` call
+wherever the list lives. Not shown yet: citations on a person's inline notes
+(still modelled and round-tripped), and anything on families (no family editor).
 Still verbatim: NOTE under NAME, and citation EVEN/ROLE/OBJE.
 
 #### Phase 4b design — sources, citations, repositories, shared notes
@@ -311,7 +318,7 @@ silently drops the `_next/` asset directory (leading underscore).
         container, `Note[]`, `updateTree`; `data/private/` fixture hook.
   - [x] 4b.2 Notes UI (`src/components/NoteRow.tsx`, person notes for now): shared-note text + "Shared with N others" badge,
         "Make private copy", notes carrying citations become visible.
-  - [ ] 4b.3 Citations UI: one-liners under facts, inline edit, "+ cite"
+  - [x] 4b.3 Citations UI (`src/components/CitationList.tsx`; event notes shown too): one-liners under facts, inline edit, "+ cite"
         with create-source, "Other citations", unpointed/dangling fix-ups.
   - [ ] 4b.4 Sources tab: list, source/repository editor, Cited by,
         delete with cascade warning.

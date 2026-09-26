@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import type { Draft } from "immer";
 import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import { TextAreaField } from "@/components/fields";
-import { isNoteLink, noteUsage, privateCopyOf, type Note } from "@/lib/gedcom";
+import { isNoteLink, noteUsage, privateCopyOf, type FamilyTree, type Note } from "@/lib/gedcom";
 
 const FIELD = "w-full rounded border border-neutral-200 px-2 py-1 text-sm";
 
@@ -96,6 +97,93 @@ export function NoteRow({
         />
       </div>
       {removeButton}
+    </div>
+  );
+}
+
+/**
+ * A container's whole notes list: each note as a NoteRow, plus an "add"
+ * box. `locate` finds the same list inside a draft tree, so every edit is
+ * one `updateTree` call wherever the list lives (a person, an event, a
+ * citation, ...).
+ */
+export function NoteList({
+  notes,
+  locate,
+  ownerId,
+  compact = false,
+}: {
+  notes: Note[] | undefined;
+  locate: (draft: Draft<FamilyTree>) => Note[];
+  ownerId: string;
+  /** Hide the add box behind a "+ note" link, for notes on facts and citations. */
+  compact?: boolean;
+}) {
+  const updateTree = useFamilyTreeStore((s) => s.updateTree);
+  const [adding, setAdding] = useState(!compact);
+  const [newNote, setNewNote] = useState("");
+  const list = notes ?? [];
+
+  const add = () => {
+    if (!newNote.trim()) return;
+    updateTree((d) => void locate(d).push({ text: newNote, citations: [] }), "Add note");
+    setNewNote("");
+    if (compact) setAdding(false);
+  };
+
+  return (
+    <div className="space-y-2">
+      {list.map((note, i) => (
+        <NoteRow
+          // Keyed by kind too, so swapping a link for a private copy remounts the field.
+          key={`${i}-${isNoteLink(note) ? note.noteId : "inline"}`}
+          note={note}
+          ownerId={ownerId}
+          onEditText={(text) =>
+            updateTree((d) => {
+              const draftNote = locate(d)[i];
+              if (!isNoteLink(draftNote)) draftNote.text = text;
+            }, "Edit note")
+          }
+          onReplace={(next) => updateTree((d) => void (locate(d)[i] = next), "Make private copy of note")}
+          onRemove={() =>
+            updateTree((d) => void locate(d).splice(i, 1), isNoteLink(note) ? "Unlink shared note" : "Remove note")
+          }
+        />
+      ))}
+      {adding ? (
+        <div className="flex items-start gap-2">
+          {/* Local draft only; nothing reaches the store until "+ Add". */}
+          <textarea
+            value={newNote}
+            onChange={(e) => setNewNote(e.target.value)}
+            placeholder="Add a note…"
+            rows={2}
+            autoFocus={compact}
+            className="flex-1 rounded border border-neutral-200 px-2 py-1 text-sm"
+          />
+          <div className="flex flex-col items-start gap-1">
+            <button onClick={add} className="text-xs text-blue-600 hover:underline">
+              + Add
+            </button>
+            {compact && (
+              <button
+                onClick={() => {
+                  setAdding(false);
+                  setNewNote("");
+                }}
+                className="text-xs text-neutral-500 hover:underline"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} className="text-xs text-blue-600 hover:underline">
+          + note
+        </button>
+      )}
     </div>
   );
 }

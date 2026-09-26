@@ -26,6 +26,15 @@ export const INDIVIDUAL_EVENT_TAGS: { tag: string; label: string }[] = [
   { tag: "FACT", label: "Other fact" },
 ];
 
+/** Tags the model gives their own slot (birth, death, marriage), so they aren't in the "add" picker. */
+const OTHER_LABELS: Record<string, string> = {
+  BIRT: "Birth",
+  DEAT: "Death",
+  MARR: "Marriage",
+  DIV: "Divorce",
+  ENGA: "Engagement",
+};
+
 export function labelForEventTag(tag: string): string {
-  return INDIVIDUAL_EVENT_TAGS.find((e) => e.tag === tag)?.label ?? tag;
+  return INDIVIDUAL_EVENT_TAGS.find((e) => e.tag === tag)?.label ?? OTHER_LABELS[tag] ?? tag;
 }

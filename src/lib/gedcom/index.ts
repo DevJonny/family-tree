@@ -4,6 +4,8 @@ export * from "./serialize";
 export * from "./model";
 export * from "./sources";
 export * from "./walk";
+export * from "./citations";
+export * from "./eventTags";
 
 import { parseGedcom } from "./parse";
 import { serializeGedcom } from "./serialize";

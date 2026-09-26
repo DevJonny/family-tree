@@ -177,7 +177,7 @@ export default function Home() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr_260px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)_260px]">
           <div className="divide-y divide-neutral-200 rounded-md border border-neutral-200 bg-white lg:max-h-[32rem] lg:overflow-y-auto">
             {individuals.length === 0 && (
               <p className="p-6 text-center text-sm text-neutral-400">
@@ -199,7 +199,7 @@ export default function Home() {
             ))}
           </div>
 
-          <div className="rounded-md border border-neutral-200 bg-white">
+          <div className="min-w-0 rounded-md border border-neutral-200 bg-white">
             <div className="flex border-b border-neutral-200 text-xs font-medium">
               <button
                 onClick={() => setActiveTab("pedigree")}
@@ -218,7 +218,7 @@ export default function Home() {
             {activeTab === "pedigree" || !selectedId ? (
               <PedigreeChart rootId={selectedId} />
             ) : (
-              <PersonDetailPanel id={selectedId} />
+              <PersonDetailPanel key={selectedId} id={selectedId} />
             )}
           </div>
 
