@@ -1,3 +1,5 @@
+import { saveGedcom } from "../gedcom";
+import type { FamilyTree } from "../gedcom/model";
 import type { DriveFileRef } from "./types";
 
 /**
@@ -29,4 +31,20 @@ export function hasConflict(
   hasUnsyncedLocalEdits: boolean,
 ): boolean {
   return hasUnsyncedLocalEdits && remoteChangedSinceLastSync(lastSynced, remote);
+}
+
+/** True when there's nothing open worth keeping: no records of any kind, just a header. */
+export function isEmptyTree(tree: FamilyTree): boolean {
+  const records = [tree.individuals, tree.families, tree.sources, tree.repositories, tree.notes];
+  return records.every((r) => Object.keys(r).length === 0) && tree.otherRoots.length === 0;
+}
+
+/**
+ * What to do when connecting to a Drive folder that already has a file.
+ * Loading it replaces whatever is open, so only do that silently when
+ * nothing is open; otherwise ask, unless the two are already the same.
+ */
+export function planConnect(local: FamilyTree, remoteText: string): "load-remote" | "in-sync" | "ask" {
+  if (isEmptyTree(local)) return "load-remote";
+  return saveGedcom(local) === remoteText ? "in-sync" : "ask";
 }

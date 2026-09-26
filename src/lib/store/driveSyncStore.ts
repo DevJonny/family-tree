@@ -14,7 +14,7 @@ import {
   requestAccessToken,
   updateGedcomFile,
 } from "../drive/driveClient";
-import { hasConflict } from "../drive/syncManager";
+import { hasConflict, planConnect } from "../drive/syncManager";
 import { usableToken, type AccessToken } from "../drive/token";
 import type { DriveFileRef, SyncConflict, SyncStatus } from "../drive/types";
 
@@ -101,6 +101,7 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
         const cachedRef = await idbGet<DriveFileRef>(IDB_KEY);
         const files = await listGedcomFiles(accessToken, folderId);
 
+        const localTree = useFamilyTreeStore.getState().tree;
         let fileRef: DriveFileRef;
         const rememberedStillExists = cachedRef && files.find((f) => f.fileId === cachedRef.fileId);
         if (rememberedStillExists) {
@@ -117,12 +118,28 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
         }
 
         const text = await downloadFileContent(accessToken, fileRef.fileId);
-        const { tree, warnings } = loadGedcom(text);
-        useFamilyTreeStore.getState().loadTree(tree, fileRef.name, warnings);
-
         await idbSet(IDB_KEY, fileRef);
         lastSyncedText = text;
-        set({ status: "idle", fileRef });
+
+        // Loading Drive's file replaces the tree open here, so only do it
+        // unasked when nothing is open (see planConnect).
+        const plan = planConnect(localTree, text);
+        if (plan === "load-remote") {
+          const { tree, warnings } = loadGedcom(text);
+          useFamilyTreeStore.getState().loadTree(tree, fileRef.name, warnings);
+        }
+        if (plan === "ask") {
+          set({
+            status: "conflict",
+            fileRef,
+            conflict: {
+              reason: "connect",
+              remote: { text, file: fileRef },
+            },
+          });
+        } else {
+          set({ status: "idle", fileRef });
+        }
         watchForLocalEdits();
       } catch (err) {
         fail(err);
@@ -163,8 +180,9 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
     },
 
     syncNow: async () => {
-      const { fileRef } = get();
-      if (!fileRef) return;
+      const { fileRef, conflict } = get();
+      // Nothing goes up while the user is choosing which version to keep.
+      if (!fileRef || conflict) return;
 
       const localText = useFamilyTreeStore.getState().exportToGedcomText();
       if (localText === lastSyncedText) return; // nothing new to push
@@ -179,7 +197,7 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
           set({
             status: "conflict",
             conflict: {
-              local: { text: localText, savedAt: Date.now() },
+              reason: "remote-changed",
               remote: { text: remoteText, file: remoteMeta },
             },
           });
@@ -203,7 +221,7 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
         // A local load; no Drive call, so no sign-in needed.
         try {
           const { tree, warnings } = loadGedcom(conflict.remote.text);
-          useFamilyTreeStore.getState().loadTree(tree, undefined, warnings);
+          useFamilyTreeStore.getState().loadTree(tree, conflict.remote.file.name, warnings);
           await idbSet(IDB_KEY, conflict.remote.file);
           lastSyncedText = conflict.remote.text;
           set({ status: "idle", fileRef: conflict.remote.file, conflict: null, error: null });
@@ -217,9 +235,12 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
       if (!accessToken) return;
       set({ status: "syncing", error: null });
       try {
-        const updated = await updateGedcomFile(accessToken, fileRef.fileId, conflict.local.text);
+        // The tree as it is now, not the snapshot from when the banner
+        // appeared: edits made while it was showing must go up too.
+        const localText = useFamilyTreeStore.getState().exportToGedcomText();
+        const updated = await updateGedcomFile(accessToken, fileRef.fileId, localText);
         await idbSet(IDB_KEY, updated);
-        lastSyncedText = conflict.local.text;
+        lastSyncedText = localText;
         set({ status: "idle", fileRef: updated, conflict: null });
       } catch (err) {
         fail(err);

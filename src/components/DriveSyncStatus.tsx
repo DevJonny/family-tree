@@ -63,29 +63,42 @@ export function DriveSyncStatus() {
   );
 }
 
+const CONFLICT_COPY = {
+  connect: {
+    message: (name: string) =>
+      `Google Drive already has ${name}, and it's different from the tree open here. Which one do you want to keep?`,
+    keepLocal: "Keep the tree open here (replace the Drive file)",
+    keepRemote: "Load the Drive file (discard the tree open here)",
+  },
+  "remote-changed": {
+    message: () =>
+      "This file changed on Google Drive since your last sync (probably edited on another device). Which version do you want to keep?",
+    keepLocal: "Keep my local changes (overwrite Drive)",
+    keepRemote: "Keep the Drive version (discard local changes)",
+  },
+};
+
 export function DriveConflictBanner() {
-  const { status, conflict, resolveConflict } = useDriveSyncStore();
+  const { status, conflict, resolveConflict, disconnect } = useDriveSyncStore();
   if (status !== "conflict" || !conflict) return null;
+  const copy = CONFLICT_COPY[conflict.reason];
+  const button = "rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-medium hover:bg-red-100";
 
   return (
-    <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-      <p className="mb-2 font-medium">
-        This file changed on Google Drive since your last sync (probably edited on another device).
-        Which version do you want to keep?
-      </p>
-      <div className="flex gap-2">
-        <button
-          onClick={() => void resolveConflict("local")}
-          className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-medium hover:bg-red-100"
-        >
-          Keep my local changes (overwrite Drive)
+    <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+      <p className="mb-2 font-medium">{copy.message(conflict.remote.file.name)}</p>
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => void resolveConflict("local")} className={button}>
+          {copy.keepLocal}
         </button>
-        <button
-          onClick={() => void resolveConflict("remote")}
-          className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-medium hover:bg-red-100"
-        >
-          Keep the Drive version (discard local changes)
+        <button onClick={() => void resolveConflict("remote")} className={button}>
+          {copy.keepRemote}
         </button>
+        {conflict.reason === "connect" && (
+          <button onClick={disconnect} className="px-2 py-1 text-xs text-red-700 hover:underline">
+            Cancel (don&apos;t connect)
+          </button>
+        )}
       </div>
     </div>
   );

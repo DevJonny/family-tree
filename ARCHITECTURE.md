@@ -255,11 +255,18 @@ a raw `<input onChange>` straight to the store.
   `md5Checksum` (falls back to `modifiedTime`).
 - `driveSyncStore.ts` — the orchestrator. "Connect Google Drive" requests
   an access token, finds-or-creates `Family Tree App/family-tree.ged`,
-  downloads and loads it. After that, every tree change is watched (via
+  and downloads it. It only loads it over the open tree when nothing is
+  open (`planConnect` in `syncManager.ts`). If a different tree is open,
+  say one just imported, it asks via the conflict banner: keep the open
+  tree (upload it), load Drive's, or cancel. It used to replace the open
+  tree without asking. After that, every tree change is watched (via
   the family-tree store's tree reference) and pushed to Drive on a 2s
   debounce; a conflicting remote change surfaces a "keep local / keep
   Drive" banner (`DriveConflictBanner`) instead of silently overwriting
-  anything. The connected file's id is cached in IndexedDB (`idb-keyval`)
+  anything. While a conflict is showing nothing is uploaded, and "keep
+  mine" uploads the tree as it is at that moment, including edits made
+  while the banner was up (it used to upload a snapshot from when the
+  banner appeared). The connected file's id is cached in IndexedDB (`idb-keyval`)
   so reconnecting on the same browser doesn't re-prompt which file to use.
 
 **Known limitations (v1):**

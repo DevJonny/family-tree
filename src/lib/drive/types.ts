@@ -18,6 +18,10 @@ export interface DriveFileRef {
 }
 
 export interface SyncConflict {
-  local: { text: string; savedAt: number };
+  /**
+   * "connect": Drive already had a file that differs from the tree open
+   * here. "remote-changed": the file changed on Drive since our last sync.
+   */
+  reason: "connect" | "remote-changed";
   remote: { text: string; file: DriveFileRef };
 }
