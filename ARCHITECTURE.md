@@ -315,6 +315,22 @@ a raw `<input onChange>` straight to the store.
   while the banner was up (it used to upload a snapshot from when the
   banner appeared). The connected file's id is cached in IndexedDB (`idb-keyval`)
   so reconnecting on the same browser doesn't re-prompt which file to use.
+- Which file (`chooseFile` in `syncManager.ts`): the remembered one if
+  it's still in the folder, else the only one, else a new file from the
+  open tree if the folder is empty. With several files and none
+  remembered, sync stops in `choosing-file` and `DriveFilePicker` lists
+  them newest first; `pickFile` connects to the chosen one (still asking
+  before it replaces a different open tree), and Cancel is `disconnect`.
+  It used to take the most recently modified file silently.
+- Testing: `createDriveSyncStore(deps)` takes the Drive calls, the
+  remembered-file storage, the clock and the debounce, so
+  `store/__tests__/driveSyncStore.test.ts` runs the whole state machine
+  (connect, picker, auto-sync, both conflicts, overlapping syncs,
+  disconnect mid-upload, expiry and 401) against an in-memory Drive.
+  `drive/__tests__/driveClient.test.ts` covers the real REST calls and
+  GIS sign-in against a stubbed `fetch`/`window.google`. The app's
+  `useDriveSyncStore` is the same factory with `driveClient` and
+  IndexedDB.
 
 **Known limitations (v1):**
 - The OAuth access token lasts about an hour and can't be renewed in the
@@ -329,12 +345,11 @@ a raw `<input onChange>` straight to the store.
   over any unsynced edits, and closing the popup left "Syncing…" hanging.
   Until they reach Drive, edits are covered by the autosave described
   under "Unsaved work".
-- `driveSyncStore`'s network calls aren't unit tested (would need mocking
-  `fetch`/GIS); its *decision logic* (`hasConflict`) is, and the store was
-  verified by hand against a real Drive folder.
-- If two devices connect for the first time with no shared history, the
-  most-recently-modified file in the Drive folder wins — there's no
-  "which file did you mean" picker yet.
+- The picker only lists files the app can see: with the `drive.file`
+  scope that's files this app created, so a `.ged` uploaded to the folder
+  by hand won't appear. Nor can the picker start a *new* file when the
+  folder already has some; move the old ones out of the
+  folder in Drive first.
 
 **One-time setup already done for this deployment:**
 

@@ -5,6 +5,8 @@ export type SyncStatus =
   | "conflict"
   /** Signed in before, but the token expired or was refused. Local edits are kept until the user signs in again. */
   | "needs-auth"
+  /** Connecting: the Drive folder has several files and none is remembered, so the user picks one. */
+  | "choosing-file"
   | "error";
 
 /** Metadata about the GEDCOM file this app owns on the user's Drive. */

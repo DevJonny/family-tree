@@ -8,6 +8,7 @@ const STATUS_LABEL: Record<string, string> = {
   syncing: "Syncing…",
   conflict: "Conflict!",
   "needs-auth": "Drive sign-in expired",
+  "choosing-file": "Choose a file",
   error: "Sync error",
 };
 
@@ -31,7 +32,7 @@ export function DriveSyncStatus() {
   const dotColor =
     status === "idle"
       ? "bg-emerald-500"
-      : status === "syncing" || status === "needs-auth"
+      : status === "syncing" || status === "needs-auth" || status === "choosing-file"
         ? "bg-amber-500"
         : "bg-red-500";
 
@@ -102,4 +103,41 @@ export function DriveConflictBanner() {
       </div>
     </div>
   );
+}
+
+/** First connect with several files in the Drive folder: which one is this tree? */
+export function DriveFilePicker() {
+  const { status, fileChoices, pickFile, disconnect } = useDriveSyncStore();
+  if (status !== "choosing-file" || !fileChoices) return null;
+
+  return (
+    <div role="dialog" aria-label="Choose a Google Drive file" className="rounded-md border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900">
+      <p className="mb-2 font-medium">
+        Your Google Drive folder has {fileChoices.length} family tree files. Which one do you want to use here?
+      </p>
+      <ul className="mb-2 space-y-1">
+        {fileChoices.map((file) => (
+          <li key={file.fileId}>
+            <button
+              onClick={() => void pickFile(file.fileId)}
+              className="flex w-full items-baseline justify-between gap-3 rounded-md border border-blue-200 bg-white px-3 py-1.5 text-left hover:bg-blue-100"
+            >
+              <span className="font-medium">{file.name}</span>
+              <span className="text-xs text-blue-700">last changed {formatModified(file.modifiedTime)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button onClick={disconnect} className="px-2 py-1 text-xs text-blue-800 hover:underline">
+        Cancel (don&apos;t connect)
+      </button>
+    </div>
+  );
+}
+
+function formatModified(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }

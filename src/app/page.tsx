@@ -7,7 +7,7 @@ import { HistoryPanel } from "@/components/HistoryPanel";
 import { PersonDetailPanel } from "@/components/PersonDetailPanel";
 import { SourcesPanel } from "@/components/SourcesPanel";
 import { UnsavedWork } from "@/components/UnsavedWork";
-import { DriveConflictBanner, DriveSyncStatus } from "@/components/DriveSyncStatus";
+import { DriveConflictBanner, DriveFilePicker, DriveSyncStatus } from "@/components/DriveSyncStatus";
 import { BareTextInput } from "@/components/fields";
 import type { Individual } from "@/lib/gedcom/model";
 
@@ -175,6 +175,7 @@ export default function Home() {
         </div>
 
         <UnsavedWork />
+        <DriveFilePicker />
         <DriveConflictBanner />
 
         {lastWarnings.length > 0 && (

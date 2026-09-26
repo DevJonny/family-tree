@@ -48,3 +48,19 @@ export function planConnect(local: FamilyTree, remoteText: string): "load-remote
   if (isEmptyTree(local)) return "load-remote";
   return saveGedcom(local) === remoteText ? "in-sync" : "ask";
 }
+
+export type FileChoice = { kind: "use"; file: DriveFileRef } | { kind: "create" } | { kind: "ask"; files: DriveFileRef[] };
+
+/**
+ * Which Drive file to connect to. The one this browser used before, if it's
+ * still in the folder; otherwise the only one; otherwise, if there are
+ * several, the user picks (newest first). It used to take the most recently
+ * modified one, which could quietly attach a device to the wrong tree.
+ */
+export function chooseFile(files: DriveFileRef[], rememberedId: string | undefined): FileChoice {
+  const remembered = rememberedId !== undefined ? files.find((f) => f.fileId === rememberedId) : undefined;
+  if (remembered) return { kind: "use", file: remembered };
+  if (files.length === 0) return { kind: "create" };
+  if (files.length === 1) return { kind: "use", file: files[0] };
+  return { kind: "ask", files: [...files].sort((a, b) => b.modifiedTime.localeCompare(a.modifiedTime)) };
+}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadGedcom, saveGedcom } from "../../gedcom";
-import { hasConflict, isEmptyTree, planConnect, remoteChangedSinceLastSync } from "../syncManager";
+import { chooseFile, hasConflict, isEmptyTree, planConnect, remoteChangedSinceLastSync } from "../syncManager";
 import type { DriveFileRef } from "../types";
 
 const base: DriveFileRef = { fileId: "f1", name: "tree.ged", modifiedTime: "2026-01-01T00:00:00Z", md5Checksum: "abc" };
@@ -59,4 +59,30 @@ test("any record at all counts as work worth asking about, not just people", () 
     const { tree } = loadGedcom(`0 HEAD\n1 CHAR UTF-8\n${record}\n0 TRLR\n`);
     assert.equal(isEmptyTree(tree), false, record);
   }
+});
+
+const file = (fileId: string, modifiedTime: string): DriveFileRef => ({ fileId, name: `${fileId}.ged`, modifiedTime });
+
+test("chooseFile uses the file this browser used before, if it's still there", () => {
+  const files = [file("a", "2026-01-02T00:00:00Z"), file("b", "2026-01-03T00:00:00Z")];
+  assert.deepEqual(chooseFile(files, "a"), { kind: "use", file: files[0] });
+});
+
+test("chooseFile creates a file when the folder is empty", () => {
+  assert.deepEqual(chooseFile([], undefined), { kind: "create" });
+  assert.deepEqual(chooseFile([], "gone"), { kind: "create" });
+});
+
+test("chooseFile uses the only file when there's nothing to choose between", () => {
+  const only = file("a", "2026-01-02T00:00:00Z");
+  assert.deepEqual(chooseFile([only], undefined), { kind: "use", file: only });
+  assert.deepEqual(chooseFile([only], "gone"), { kind: "use", file: only }, "a remembered file that was deleted");
+});
+
+test("chooseFile asks which file when there are several and none is remembered, newest first", () => {
+  const older = file("a", "2026-01-02T00:00:00Z");
+  const newer = file("b", "2026-01-05T00:00:00Z");
+  const middle = file("c", "2026-01-03T00:00:00Z");
+  assert.deepEqual(chooseFile([older, newer, middle], undefined), { kind: "ask", files: [newer, middle, older] });
+  assert.deepEqual(chooseFile([older, newer], "gone").kind, "ask");
 });
