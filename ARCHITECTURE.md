@@ -71,14 +71,18 @@ Google Drive is the sync backend, and every edit is undoable/redoable.
   bug that suite found. Add new quirks to the fixture, not just to unit
   tests. Run with `npm test`.
 
-**Known limitation (v1):** `NOTE`/`SOUR` *pointer* records (`1 NOTE @N1@`
-referring to a top-level `0 @N1@ NOTE` record) aren't resolved yet — only
-inline note values are. Top-level NOTE/SOUR/REPO/SUBM records are
-preserved verbatim in `FamilyTree.otherRoots` so they aren't lost, just
-not yet editable as first-class data. Likewise a person/family NOTE that
-has its own sub-records (e.g. a `2 SOUR` citation under it) is kept
-verbatim in `extra` and so isn't shown in the Details tab yet. Both are
-Phase 4b.
+**Sources, citations and notes (Phase 4b.1)** live in
+`src/lib/gedcom/sources.ts`. Top-level SOUR/REPO/NOTE records load into
+`FamilyTree.sources`/`repositories`/`notes`, and `otherRoots` now holds
+only what's still unmodelled (SUBM, OBJE, vendor records). Citations are
+parsed on every container listed in the design below. A person's or
+family's `notes` (and an event's) are `Note[]`: inline notes carry their
+own citations, and `1 NOTE @N1@` becomes a link to the shared record.
+Verbatim nodes are re-leveled on export (`atLevel`), so notes and
+citations can move between depths. New record ids come from
+`nextFreeId(tree, prefix)`, which skips every id and pointer anywhere in
+the file. The store uses it for people and families too.
+Still verbatim: NOTE under NAME, and citation EVEN/ROLE/OBJE.
 
 #### Phase 4b design — sources, citations, repositories, shared notes
 
@@ -122,7 +126,10 @@ interface Repository {
   counts and delete cascades complete by construction. SOURs the model
   doesn't reach (inside SUBM or unmodelled records) are counted as
   "references we can't edit" and left alone, never half-deleted.
-- `notes` on every container becomes `Note[]` (was `string[]`).
+- `notes` on every container becomes `Note[]` (was `string[]`), and an
+  event's single lifted `note?: string` becomes `notes?: Note[]` too.
+- A citation's `DATA` line keeps any other sub-records (a second TEXT,
+  vendor tags) in `dataExtra`, so they stay under DATA on export.
 - As with names, only the first well-formed occurrence of a typed field
   is lifted; duplicates stay in `extra`.
 - Unpointed citations and dangling pointers (`@S99@`) round-trip
@@ -297,7 +304,7 @@ silently drops the `_next/` asset directory (leading underscore).
 - [ ] Phase 4b — Sources, citations, repositories and shared notes as
       first-class editable data (design: "Phase 4b design" above).
       Delivered in four slices, each shippable on its own:
-  - [ ] 4b.1 Model: `sources`/`repositories`/`notes`, `Citation` on every
+  - [x] 4b.1 Model: `sources`/`repositories`/`notes`, `Citation` on every
         container, `Note[]`, `updateTree`; `data/private/` fixture hook.
   - [ ] 4b.2 Notes UI: shared-note text + "Shared with N others" badge,
         "Make private copy", notes carrying citations become visible.

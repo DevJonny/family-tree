@@ -13,16 +13,11 @@ import {
   type Individual,
   type NameParts,
   loadGedcom,
+  nextFreeId,
   saveGedcom,
 } from "../gedcom";
 
 const EMPTY_TREE: FamilyTree = buildFamilyTree([]);
-
-function nextXref(existing: Record<string, unknown>, prefix: "I" | "F"): string {
-  let n = 1;
-  while (existing[`@${prefix}${n}@`]) n += 1;
-  return `@${prefix}${n}@`;
-}
 
 interface FamilyTreeState {
   tree: FamilyTree;
@@ -52,6 +47,13 @@ interface FamilyTreeState {
    * exist (e.g. a stale reference from a race with a delete).
    */
   updateIndividual: (id: string, recipe: (draft: Draft<Individual>) => void, label?: string) => void;
+  /**
+   * The tree-wide counterpart of `updateIndividual`, for edits that aren't
+   * about one person: sources, repositories, shared notes, or a change that
+   * spans several records (e.g. deleting a source and all its citations).
+   * One call = one undo step.
+   */
+  updateTree: (recipe: (draft: Draft<FamilyTree>) => void, label: string) => void;
   /** Creates a new person and links them as this child's father/mother, creating a FAM record if needed. */
   addParent: (childId: string, which: "father" | "mother", name?: NameParts) => string;
 
@@ -107,7 +109,7 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
     selectIndividual: (id) => set({ selectedId: id }),
 
     addIndividual: (name) => {
-      const id = nextXref(get().tree.individuals, "I");
+      const id = nextFreeId(get().tree, "I");
       historyEngine.apply((draft) => {
         const indi: Individual = {
           id,
@@ -116,6 +118,7 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
           familyAsChild: [],
           familyAsSpouse: [],
           notes: [],
+          citations: [],
           extra: [],
         };
         draft.individuals[id] = indi;
@@ -141,6 +144,10 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
       }, label);
     },
 
+    updateTree: (recipe, label) => {
+      historyEngine.apply((draft) => void recipe(draft), label);
+    },
+
     removeIndividual: (id) => {
       historyEngine.apply((draft) => {
         delete draft.individuals[id];
@@ -150,21 +157,22 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
           if (fam.husband === id) fam.husband = undefined;
           if (fam.wife === id) fam.wife = undefined;
           fam.children = fam.children.filter((c) => c !== id);
-          // nextXref reuses freed ids, so drop this person's link data too,
-          // or a future person given the same id would inherit it.
+          // Once nothing points at this id, nextFreeId may hand it out again,
+          // so drop this person's link data too or they'd inherit it.
           if (fam.memberExtra) delete fam.memberExtra[id];
         }
       }, "Remove individual");
     },
 
     addParent: (childId, which, name) => {
-      const { individuals, families } = get().tree;
-      const parentId = nextXref(individuals, "I");
+      const { tree } = get();
+      const { individuals } = tree;
+      const parentId = nextFreeId(tree, "I");
       // Reuse the child's existing "family as child" record if they have
       // one (so we don't fork them into two separate families), otherwise
       // mint a new FAM record to hold this parent link.
       const existingFamId = individuals[childId]?.familyAsChild[0];
-      const famId = existingFamId ?? nextXref(families, "F");
+      const famId = existingFamId ?? nextFreeId(tree, "F");
 
       historyEngine.apply((draft) => {
         const parent: Individual = {
@@ -174,6 +182,7 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
           familyAsChild: [],
           familyAsSpouse: [famId],
           notes: [],
+          citations: [],
           extra: [],
         };
         draft.individuals[parentId] = parent;
@@ -183,6 +192,7 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
           children: [],
           events: [],
           notes: [],
+          citations: [],
           extra: [],
         };
         if (which === "father") family.husband = parentId;

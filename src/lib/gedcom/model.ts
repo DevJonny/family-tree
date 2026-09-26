@@ -1,4 +1,22 @@
 import type { GedcomNode } from "./types";
+import {
+  citationToNode,
+  isPointer,
+  noteToNode,
+  parseCitation,
+  parseNote,
+  parseRepository,
+  parseSharedNote,
+  parseSource,
+  repositoryToNode,
+  sharedNoteToNode,
+  sourceToNode,
+  type Citation,
+  type Note,
+  type Repository,
+  type SharedNote,
+  type Source,
+} from "./sources";
 
 /**
  * Normalized, editable family-tree model built from a parsed GEDCOM tree.
@@ -36,7 +54,9 @@ export interface NameParts {
    * have them, and the NAME value already carries them.
    */
   derived?: DerivablePart[];
-  /** Other NAME sub-records (SOUR citations, NOTE, SPFX, _MARNM, ...), verbatim. */
+  /** Omitted when there are none, like `extra`. */
+  citations?: Citation[];
+  /** Other NAME sub-records (NOTE, SPFX, _MARNM, ...), verbatim. */
   extra?: GedcomNode[];
 }
 
@@ -53,8 +73,8 @@ const NAME_PART_TAGS = {
 
 type NamePartTag = keyof typeof NAME_PART_TAGS;
 
-/** The DATE/PLAC/NOTE lines of an event, lifted into typed fields. */
-type LiftedEventTag = "DATE" | "PLAC" | "NOTE";
+/** The DATE/PLAC lines of an event, lifted into typed fields. */
+type LiftedEventTag = "DATE" | "PLAC";
 
 export interface EventFact {
   tag: string;
@@ -62,14 +82,17 @@ export interface EventFact {
   value?: string;
   date?: string;
   place?: string;
-  note?: string;
+  /** Omitted when there are none, like `extra`. */
+  notes?: Note[];
   /**
-   * Sub-records hanging off the DATE/PLAC/NOTE line itself — e.g. a place's
+   * Sub-records hanging off the DATE/PLAC line itself — e.g. a place's
    * MAP/LATI/LONG coordinates or a date's TIME. Kept (and re-attached) for
    * as long as that field is non-empty; clearing the field drops them.
    */
   attached?: Partial<Record<LiftedEventTag, GedcomNode[]>>;
-  /** Any other sub-records (AGE, TYPE, SOUR citations, ...), preserved as-is. */
+  /** Omitted when there are none, like `extra`. */
+  citations?: Citation[];
+  /** Any other sub-records (AGE, TYPE, ...), preserved as-is. */
   extra?: GedcomNode[];
 }
 
@@ -88,7 +111,9 @@ export interface Individual {
   familyAsChildExtra?: Record<string, GedcomNode[]>;
   /** Sub-records under a FAMS line (NOTE), keyed by family id. */
   familyAsSpouseExtra?: Record<string, GedcomNode[]>;
-  notes: string[];
+  notes: Note[];
+  /** Citations on the person as a whole rather than on one fact ("Other citations"). */
+  citations: Citation[];
   extra: GedcomNode[];
 }
 
@@ -106,14 +131,19 @@ export interface Family {
   memberExtra?: Record<string, GedcomNode[]>;
   marriage?: EventFact;
   events: EventFact[];
-  notes: string[];
+  notes: Note[];
+  citations: Citation[];
   extra: GedcomNode[];
 }
 
 export interface FamilyTree {
   individuals: Record<string, Individual>;
   families: Record<string, Family>;
-  /** Top-level records we don't model yet (SUBM, SOUR, REPO, top-level NOTE, ...). */
+  sources: Record<string, Source>;
+  repositories: Record<string, Repository>;
+  /** Shared `0 @N1@ NOTE` records, which notes anywhere can link to. */
+  notes: Record<string, SharedNote>;
+  /** Top-level records we don't model yet (SUBM, OBJE, vendor records, ...). */
   otherRoots: GedcomNode[];
   header?: GedcomNode;
 }
@@ -166,6 +196,8 @@ function parseName(nameNode: GedcomNode): NameParts {
     // duplicates, or part lines with their own sub-records, stay verbatim.
     if (field && child.value && child.children.length === 0 && parts[field] === undefined) {
       parts[field] = child.value;
+    } else if (child.tag === "SOUR") {
+      (parts.citations ??= []).push(parseCitation(child));
     } else {
       extra.push(child);
     }
@@ -221,6 +253,7 @@ function nameToGedcomNode(name: NameParts): GedcomNode {
     if (!value || name.derived?.includes(field as DerivablePart)) continue;
     children.push({ level: 2, tag, value, children: [] });
   }
+  for (const citation of name.citations ?? []) children.push(citationToNode(citation, 2));
   if (name.extra) children.push(...name.extra);
   return { level: 1, tag: "NAME", value: name.full ?? nameValueFromParts(name), children };
 }
@@ -228,7 +261,7 @@ function nameToGedcomNode(name: NameParts): GedcomNode {
 // ---------------------------------------------------------------------------
 // Events
 
-const LIFTED_EVENT_FIELDS = { DATE: "date", PLAC: "place", NOTE: "note" } as const;
+const LIFTED_EVENT_FIELDS = { DATE: "date", PLAC: "place" } as const;
 
 function parseEvent(node: GedcomNode): EventFact {
   const event: EventFact = { tag: node.tag };
@@ -237,13 +270,17 @@ function parseEvent(node: GedcomNode): EventFact {
 
   for (const child of node.children) {
     const field = LIFTED_EVENT_FIELDS[child.tag as LiftedEventTag];
-    // Only the first DATE/PLAC/NOTE (with a value) is lifted; a second
-    // NOTE, or a PLAC with no value, stays verbatim in `extra`.
+    // Only the first DATE/PLAC (with a value) is lifted; a second one, or
+    // a PLAC with no value, stays verbatim in `extra`.
     if (field && child.value && event[field] === undefined) {
       event[field] = child.value;
       if (child.children.length > 0) {
         event.attached = { ...event.attached, [child.tag]: child.children };
       }
+    } else if (child.tag === "NOTE") {
+      (event.notes ??= []).push(parseNote(child));
+    } else if (child.tag === "SOUR") {
+      (event.citations ??= []).push(parseCitation(child));
     } else {
       extra.push(child);
     }
@@ -255,11 +292,13 @@ function parseEvent(node: GedcomNode): EventFact {
 
 function eventToGedcomNode(level: number, event: EventFact): GedcomNode {
   const children: GedcomNode[] = [];
-  for (const [tag, field] of Object.entries(LIFTED_EVENT_FIELDS) as [LiftedEventTag, "date" | "place" | "note"][]) {
+  for (const [tag, field] of Object.entries(LIFTED_EVENT_FIELDS) as [LiftedEventTag, "date" | "place"][]) {
     const value = event[field];
     if (!value) continue;
     children.push({ level: level + 1, tag, value, children: event.attached?.[tag] ?? [] });
   }
+  for (const note of event.notes ?? []) children.push(noteToNode(note, level + 1));
+  for (const citation of event.citations ?? []) children.push(citationToNode(citation, level + 1));
   if (event.extra) children.push(...event.extra);
   return { level, tag: event.tag, value: event.value, children };
 }
@@ -269,7 +308,14 @@ function eventToGedcomNode(level: number, event: EventFact): GedcomNode {
 
 /** Builds the normalized FamilyTree model from parsed GEDCOM roots. */
 export function buildFamilyTree(roots: GedcomNode[]): FamilyTree {
-  const tree: FamilyTree = { individuals: {}, families: {}, otherRoots: [] };
+  const tree: FamilyTree = {
+    individuals: {},
+    families: {},
+    sources: {},
+    repositories: {},
+    notes: {},
+    otherRoots: [],
+  };
 
   for (const root of roots) {
     if (root.tag === "HEAD") {
@@ -285,6 +331,18 @@ export function buildFamilyTree(roots: GedcomNode[]): FamilyTree {
     }
     if (root.tag === "FAM" && root.xref) {
       tree.families[root.xref] = buildFamily(root);
+      continue;
+    }
+    if (root.xref && root.tag === "SOUR") {
+      tree.sources[root.xref] = parseSource(root);
+      continue;
+    }
+    if (root.xref && root.tag === "REPO") {
+      tree.repositories[root.xref] = parseRepository(root);
+      continue;
+    }
+    if (root.xref && root.tag === "NOTE") {
+      tree.notes[root.xref] = parseSharedNote(root);
       continue;
     }
     tree.otherRoots.push(root);
@@ -311,6 +369,7 @@ function buildIndividual(node: GedcomNode): Individual {
     familyAsChild: [],
     familyAsSpouse: [],
     notes: [],
+    citations: [],
     extra: [],
   };
 
@@ -350,13 +409,11 @@ function buildIndividual(node: GedcomNode): Individual {
         }
         break;
       case "NOTE":
-        // Notes with their own sub-records (e.g. a SOUR citation) stay
-        // verbatim until notes are modeled properly (Phase 4b).
-        if (value && child.children.length === 0) {
-          indi.notes.push(value);
-          continue;
-        }
-        break;
+        indi.notes.push(parseNote(child));
+        continue;
+      case "SOUR":
+        indi.citations.push(parseCitation(child));
+        continue;
       default:
         if (isEventTag(child.tag)) {
           indi.events.push(parseEvent(child));
@@ -379,6 +436,7 @@ function buildFamily(node: GedcomNode): Family {
     children: [],
     events: [],
     notes: [],
+    citations: [],
     extra: [],
   };
 
@@ -407,11 +465,11 @@ function buildFamily(node: GedcomNode): Family {
         else fam.events.push(parseEvent(child));
         continue;
       case "NOTE":
-        if (value && child.children.length === 0) {
-          fam.notes.push(value);
-          continue;
-        }
-        break;
+        fam.notes.push(parseNote(child));
+        continue;
+      case "SOUR":
+        fam.citations.push(parseCitation(child));
+        continue;
       default:
         if (isEventTag(child.tag)) {
           fam.events.push(parseEvent(child));
@@ -456,6 +514,9 @@ export function familyTreeToGedcomNodes(tree: FamilyTree): GedcomNode[] {
   for (const fam of Object.values(tree.families)) {
     roots.push(familyToGedcomNode(fam));
   }
+  for (const source of Object.values(tree.sources)) roots.push(sourceToNode(source));
+  for (const repo of Object.values(tree.repositories)) roots.push(repositoryToNode(repo));
+  for (const note of Object.values(tree.notes)) roots.push(sharedNoteToNode(note));
   roots.push(...tree.otherRoots);
   roots.push({ level: 0, tag: "TRLR", children: [] });
 
@@ -475,7 +536,8 @@ function individualToGedcomNode(indi: Individual): GedcomNode {
   for (const event of indi.events) children.push(eventToGedcomNode(1, event));
   for (const famc of indi.familyAsChild) children.push(pointerNode("FAMC", famc, indi.familyAsChildExtra));
   for (const fams of indi.familyAsSpouse) children.push(pointerNode("FAMS", fams, indi.familyAsSpouseExtra));
-  for (const note of indi.notes) children.push({ level: 1, tag: "NOTE", value: note, children: [] });
+  for (const note of indi.notes) children.push(noteToNode(note, 1));
+  for (const citation of indi.citations) children.push(citationToNode(citation, 1));
   children.push(...indi.extra);
 
   return { level: 0, xref: indi.id, tag: "INDI", children };
@@ -488,8 +550,36 @@ function familyToGedcomNode(fam: Family): GedcomNode {
   for (const child of fam.children) children.push(pointerNode("CHIL", child, fam.memberExtra));
   if (fam.marriage) children.push(eventToGedcomNode(1, fam.marriage));
   for (const event of fam.events) children.push(eventToGedcomNode(1, event));
-  for (const note of fam.notes) children.push({ level: 1, tag: "NOTE", value: note, children: [] });
+  for (const note of fam.notes) children.push(noteToNode(note, 1));
+  for (const citation of fam.citations) children.push(citationToNode(citation, 1));
   children.push(...fam.extra);
 
   return { level: 0, xref: fam.id, tag: "FAM", children };
+}
+
+// ---------------------------------------------------------------------------
+// Ids
+
+/**
+ * The first `@<prefix><n>@` that appears nowhere in the tree — not as a
+ * record id, and not as a pointer either, including pointers inside
+ * verbatim `extra` nodes and dangling ones. So a new record can never
+ * silently "adopt" a reference that was meant for something else (a
+ * deleted source's leftover pointer, an `ASSO` to a missing person, ...).
+ *
+ * Walks the whole exported tree, so it's O(file size); fine for one call
+ * per user action.
+ */
+export function nextFreeId(tree: FamilyTree, prefix: string): string {
+  const taken = new Set<string>();
+  const walk = (node: GedcomNode) => {
+    if (node.xref) taken.add(node.xref);
+    if (isPointer(node.value)) taken.add(node.value);
+    node.children.forEach(walk);
+  };
+  familyTreeToGedcomNodes(tree).forEach(walk);
+
+  let n = 1;
+  while (taken.has(`@${prefix}${n}@`)) n += 1;
+  return `@${prefix}${n}@`;
 }

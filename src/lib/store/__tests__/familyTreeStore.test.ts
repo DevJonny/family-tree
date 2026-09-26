@@ -30,7 +30,7 @@ test("updateIndividual applies an arbitrary recipe and records one undoable edit
       draft.sex = "F";
       draft.birth = { tag: "BIRT", date: "10 DEC 1815", place: "London" };
       draft.events.push({ tag: "OCCU", value: "Mathematician" });
-      draft.notes.push("Wrote the first algorithm.");
+      draft.notes.push({ text: "Wrote the first algorithm.", citations: [] });
     },
     "Fill in details",
   );
@@ -39,7 +39,7 @@ test("updateIndividual applies an arbitrary recipe and records one undoable edit
   assert.equal(indi.sex, "F");
   assert.equal(indi.birth?.place, "London");
   assert.equal(indi.events[0].value, "Mathematician");
-  assert.equal(indi.notes[0], "Wrote the first algorithm.");
+  assert.deepEqual(indi.notes[0], { text: "Wrote the first algorithm.", citations: [] });
 
   // One recipe call = one undo step, however many fields it touched.
   const state = useFamilyTreeStore.getState();

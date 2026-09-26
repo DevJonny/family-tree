@@ -2,6 +2,7 @@ export * from "./types";
 export * from "./parse";
 export * from "./serialize";
 export * from "./model";
+export * from "./sources";
 
 import { parseGedcom } from "./parse";
 import { serializeGedcom } from "./serialize";
