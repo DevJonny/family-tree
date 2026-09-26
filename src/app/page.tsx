@@ -1,12 +1,73 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import { PedigreeChart } from "@/components/PedigreeChart";
 import { HistoryPanel } from "@/components/HistoryPanel";
+import { PersonDetailPanel } from "@/components/PersonDetailPanel";
 import { DriveConflictBanner, DriveSyncStatus } from "@/components/DriveSyncStatus";
+import { BareTextInput } from "@/components/fields";
+import type { Individual } from "@/lib/gedcom/model";
+
+function IndividualRow({
+  indi,
+  selected,
+  onSelect,
+  onEdit,
+  onRemove,
+}: {
+  indi: Individual;
+  selected: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  const updateIndividualName = useFamilyTreeStore((s) => s.updateIndividualName);
+
+  return (
+    <div
+      onClick={onSelect}
+      className={`cursor-pointer space-y-1 p-2 text-sm ${selected ? "bg-neutral-100" : "hover:bg-neutral-50"}`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="w-12 shrink-0 font-mono text-xs text-neutral-400">{indi.id}</span>
+        <BareTextInput
+          value={indi.names[0]?.given ?? ""}
+          onChange={(v) => updateIndividualName(indi.id, 0, { given: v })}
+          placeholder="Given"
+          className="w-20 min-w-0 rounded border border-neutral-200 px-1.5 py-1 text-xs"
+        />
+        <BareTextInput
+          value={indi.names[0]?.surname ?? ""}
+          onChange={(v) => updateIndividualName(indi.id, 0, { surname: v })}
+          placeholder="Surname"
+          className="w-20 min-w-0 rounded border border-neutral-200 px-1.5 py-1 text-xs"
+        />
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+          className="ml-auto shrink-0 text-xs text-blue-500 hover:text-blue-700"
+        >
+          Edit
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="shrink-0 text-xs text-red-400 hover:text-red-600"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<"pedigree" | "details">("pedigree");
   const {
     tree,
     fileName,
@@ -19,7 +80,6 @@ export default function Home() {
     exportToGedcomText,
     selectIndividual,
     addIndividual,
-    updateIndividualName,
     removeIndividual,
     undo,
     redo,
@@ -125,45 +185,41 @@ export default function Home() {
               </p>
             )}
             {individuals.map((indi) => (
-              <div
+              <IndividualRow
                 key={indi.id}
-                onClick={() => selectIndividual(indi.id)}
-                className={`cursor-pointer space-y-1 p-2 text-sm ${
-                  selectedId === indi.id ? "bg-neutral-100" : "hover:bg-neutral-50"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="w-12 shrink-0 font-mono text-xs text-neutral-400">{indi.id}</span>
-                  <input
-                    value={indi.names[0]?.given ?? ""}
-                    onChange={(e) => updateIndividualName(indi.id, 0, { given: e.target.value })}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Given"
-                    className="w-20 min-w-0 rounded border border-neutral-200 px-1.5 py-1 text-xs"
-                  />
-                  <input
-                    value={indi.names[0]?.surname ?? ""}
-                    onChange={(e) => updateIndividualName(indi.id, 0, { surname: e.target.value })}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Surname"
-                    className="w-20 min-w-0 rounded border border-neutral-200 px-1.5 py-1 text-xs"
-                  />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeIndividual(indi.id);
-                    }}
-                    className="ml-auto shrink-0 text-xs text-red-400 hover:text-red-600"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
+                indi={indi}
+                selected={selectedId === indi.id}
+                onSelect={() => selectIndividual(indi.id)}
+                onEdit={() => {
+                  selectIndividual(indi.id);
+                  setActiveTab("details");
+                }}
+                onRemove={() => removeIndividual(indi.id)}
+              />
             ))}
           </div>
 
           <div className="rounded-md border border-neutral-200 bg-white">
-            <PedigreeChart rootId={selectedId} />
+            <div className="flex border-b border-neutral-200 text-xs font-medium">
+              <button
+                onClick={() => setActiveTab("pedigree")}
+                className={`px-3 py-2 ${activeTab === "pedigree" ? "border-b-2 border-neutral-900 text-neutral-900" : "text-neutral-400 hover:text-neutral-600"}`}
+              >
+                Pedigree
+              </button>
+              <button
+                onClick={() => setActiveTab("details")}
+                disabled={!selectedId}
+                className={`px-3 py-2 disabled:cursor-default disabled:text-neutral-300 ${activeTab === "details" ? "border-b-2 border-neutral-900 text-neutral-900" : "text-neutral-400 hover:text-neutral-600"}`}
+              >
+                Details
+              </button>
+            </div>
+            {activeTab === "pedigree" || !selectedId ? (
+              <PedigreeChart rootId={selectedId} />
+            ) : (
+              <PersonDetailPanel id={selectedId} />
+            )}
           </div>
 
           <div className="rounded-md border border-neutral-200 bg-white">

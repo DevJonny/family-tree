@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import type { Draft } from "immer";
 import { History } from "../history/historyStore";
 import type { HistorySnapshot } from "../history/types";
 import {
@@ -41,6 +42,15 @@ interface FamilyTreeState {
   addIndividual: (name?: NameParts) => string;
   updateIndividualName: (id: string, index: number, patch: Partial<NameParts>) => void;
   removeIndividual: (id: string) => void;
+  /**
+   * Escape hatch for any other field-level edit to one person (sex,
+   * birth/death, other events, notes, additional names, ...). Components
+   * pass a small Immer recipe; this keeps the store from needing a
+   * hand-written action per field while every edit still goes through
+   * `History.apply()` and stays undoable. No-op if the person doesn't
+   * exist (e.g. a stale reference from a race with a delete).
+   */
+  updateIndividual: (id: string, recipe: (draft: Draft<Individual>) => void, label?: string) => void;
   /** Creates a new person and links them as this child's father/mother, creating a FAM record if needed. */
   addParent: (childId: string, which: "father" | "mother", name?: NameParts) => string;
 
@@ -118,6 +128,14 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
         if (!indi) return;
         indi.names[index] = { ...indi.names[index], ...patch };
       }, "Edit name");
+    },
+
+    updateIndividual: (id, recipe, label = "Edit person") => {
+      historyEngine.apply((draft) => {
+        const indi = draft.individuals[id];
+        if (!indi) return;
+        recipe(indi);
+      }, label);
     },
 
     removeIndividual: (id) => {

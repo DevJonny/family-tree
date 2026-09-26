@@ -20,6 +20,42 @@ test("addIndividual creates a person and records an undoable edit", () => {
   assert.equal(state.canRedo, false);
 });
 
+test("updateIndividual applies an arbitrary recipe and records one undoable edit", () => {
+  reset();
+  const id = useFamilyTreeStore.getState().addIndividual({ given: "Ada", surname: "Lovelace" });
+
+  useFamilyTreeStore.getState().updateIndividual(
+    id,
+    (draft) => {
+      draft.sex = "F";
+      draft.birth = { tag: "BIRT", date: "10 DEC 1815", place: "London" };
+      draft.events.push({ tag: "OCCU", value: "Mathematician" });
+      draft.notes.push("Wrote the first algorithm.");
+    },
+    "Fill in details",
+  );
+
+  const indi = useFamilyTreeStore.getState().tree.individuals[id];
+  assert.equal(indi.sex, "F");
+  assert.equal(indi.birth?.place, "London");
+  assert.equal(indi.events[0].value, "Mathematician");
+  assert.equal(indi.notes[0], "Wrote the first algorithm.");
+
+  // One recipe call = one undo step, however many fields it touched.
+  const state = useFamilyTreeStore.getState();
+  assert.equal(state.history.undoStack.at(-1)?.label, "Fill in details");
+  useFamilyTreeStore.getState().undo();
+  assert.equal(useFamilyTreeStore.getState().tree.individuals[id].sex, undefined);
+});
+
+test("updateIndividual is a safe no-op for an id that doesn't exist", () => {
+  reset();
+  useFamilyTreeStore.getState().updateIndividual("@I999@", (draft) => {
+    draft.sex = "F";
+  });
+  assert.equal(useFamilyTreeStore.getState().canUndo, false);
+});
+
 test("addParent links a new person as father via a shared FAM record", () => {
   reset();
   const childId = useFamilyTreeStore.getState().addIndividual({ given: "Child", surname: "One" });

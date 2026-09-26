@@ -75,11 +75,25 @@ hand-coded per action.
 
 ### 3. Store — `src/lib/store/familyTreeStore.ts`
 
-Thin Zustand wrapper around one `History<FamilyTree>` instance. Exposes
-domain actions (`addIndividual`, `updateIndividualName`,
-`removeIndividual`, `loadFromGedcomText`, `exportToGedcomText`, `undo`,
-`redo`). This is the only file that should grow as more editing features
-are added — new actions call `history.apply(recipe, label)`.
+Thin Zustand wrapper around one `History<FamilyTree>` instance. Exposes a
+few named domain actions (`addIndividual`, `addParent`, `removeIndividual`,
+`loadFromGedcomText`, `exportToGedcomText`, `undo`/`redo`/`undoTo`/`redoTo`)
+plus one escape hatch, `updateIndividual(id, recipe, label?)`, which runs
+an arbitrary Immer recipe against one person and records it as a single
+undo step — this is what `PersonDetailPanel` uses for every field (names,
+sex, birth/death, other events, notes) instead of the store needing a
+hand-written action per field.
+
+**Text inputs commit on blur/Enter, not on every keystroke.** Found this
+the hard way while testing Phase 4 in a live browser: the first version
+called the store straight from each `<input>`'s `onChange`, so typing a
+10-character date created 10 separate undo-stack entries. Fixed via
+`src/components/fields.tsx` (`TextField`/`TextAreaField`/`BareTextInput`),
+which hold a local draft and only call the store once, on blur or Enter —
+resyncing from the incoming value during render (not an effect) if it
+changes for another reason, like switching the selected person or an
+undo/redo. Any new text input should use one of these rather than wiring
+a raw `<input onChange>` straight to the store.
 
 ### 4. Google Drive sync — `src/lib/drive/` + `src/lib/store/driveSyncStore.ts`
 
@@ -164,9 +178,20 @@ silently drops the `_next/` asset directory (leading underscore).
       `buildAncestorTree`) lives in `src/lib/gedcom/relationships.ts`,
       unit tested separately from the UI. A descendant-tree view is not
       built yet.
-- [ ] Phase 4 — Richer editing: multiple names, more event/attribute
-      types with UI (not just raw pass-through), sources/citations,
-      media attachments, resolved NOTE/SOUR pointer records.
+- [x] Phase 4a — Person detail editor (`src/components/PersonDetailPanel.tsx`,
+      a "Details" tab next to the pedigree chart): multiple names (add/
+      remove, given/surname/type), sex, birth/death date+place, arbitrary
+      other events from a common-tag picker (occupation, residence,
+      burial, ...), and notes — all add/edit/remove, all undoable. Backed
+      by the store's generic `updateIndividual` escape hatch rather than
+      one action per field.
+- [ ] Phase 4b — Sources/citations, media attachments, and resolving
+      NOTE/SOUR *pointer* records (`1 NOTE @N1@`) into first-class,
+      editable data instead of the current read-only passthrough. Bigger
+      and more architecturally open (would need new model fields, new
+      GEDCOM tag support, and for media, Drive-based asset storage) —
+      left for a session where we can talk through priorities/UX rather
+      than guessing solo.
 - [x] Phase 5 — History panel (`src/components/HistoryPanel.tsx`):
       shows every edit chronologically with a "current" marker; clicking
       any past or future entry jumps straight there via the store's
