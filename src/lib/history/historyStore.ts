@@ -1,7 +1,5 @@
-import { applyPatches, enablePatches, produceWithPatches, type Draft } from "immer";
+import { produce, type Draft } from "immer";
 import type { HistoryEntry, HistorySnapshot } from "./types";
-
-enablePatches();
 
 let nextId = 0;
 function makeId(): string {
@@ -13,13 +11,14 @@ export type Recipe<T> = (draft: Draft<T>) => void;
 export type Listener<T> = (state: T, snapshot: HistorySnapshot) => void;
 
 /**
- * Generic undo/redo engine built on Immer patches.
+ * Generic undo/redo engine built on Immer.
  *
  * Every mutation is expressed as a "recipe" (an Immer producer function).
- * `apply()` runs it, records the forward and inverse patch sets, and pushes
- * them onto the undo stack. `undo()`/`redo()` replay inverse/forward patches
- * without needing to know anything about the shape of T (individuals,
- * families, GEDCOM nodes, whatever) — this class is deliberately generic so
+ * `apply()` runs it and pushes the states before and after onto the undo
+ * stack (structurally shared, so cheap). `undo()`/`redo()` restore those
+ * exact objects, which keeps key order intact. None of it needs to know
+ * anything about the shape of T (individuals, families, GEDCOM nodes,
+ * whatever) — this class is deliberately generic so
  * it can be unit tested in isolation from the family-tree domain model.
  *
  * A new `apply()` after an `undo()` clears the redo stack, matching standard
@@ -27,8 +26,8 @@ export type Listener<T> = (state: T, snapshot: HistorySnapshot) => void;
  */
 export class History<T> {
   #state: T;
-  #undoStack: HistoryEntry[] = [];
-  #redoStack: HistoryEntry[] = [];
+  #undoStack: HistoryEntry<T>[] = [];
+  #redoStack: HistoryEntry<T>[] = [];
   #listeners = new Set<Listener<T>>();
   #maxEntries: number;
 
@@ -60,14 +59,14 @@ export class History<T> {
 
   /** Applies a mutation and records it as a new undo-able entry. */
   apply(recipe: Recipe<T>, label = "Edit"): void {
-    const [nextState, patches, inversePatches] = produceWithPatches(this.#state, recipe);
-    if (patches.length === 0) {
+    const nextState = produce(this.#state, recipe);
+    if (nextState === this.#state) {
       // No-op edit (e.g. setting a field to its current value) - don't
       // pollute the undo stack.
       return;
     }
+    this.#undoStack.push({ id: makeId(), label, timestamp: Date.now(), before: this.#state, after: nextState });
     this.#state = nextState;
-    this.#undoStack.push({ id: makeId(), label, timestamp: Date.now(), patches, inversePatches });
     if (this.#undoStack.length > this.#maxEntries) {
       this.#undoStack.shift();
     }
@@ -90,7 +89,7 @@ export class History<T> {
   undo(): boolean {
     const entry = this.#undoStack.pop();
     if (!entry) return false;
-    this.#state = applyPatches(this.#state as object, entry.inversePatches) as T;
+    this.#state = entry.before;
     this.#redoStack.push(entry);
     this.#notify();
     return true;
@@ -99,7 +98,7 @@ export class History<T> {
   redo(): boolean {
     const entry = this.#redoStack.pop();
     if (!entry) return false;
-    this.#state = applyPatches(this.#state as object, entry.patches) as T;
+    this.#state = entry.after;
     this.#undoStack.push(entry);
     this.#notify();
     return true;

@@ -100,3 +100,17 @@ test("subscribe() is notified on apply/undo/redo with the new state", () => {
   h.apply((d) => void (d.count = 3));
   assert.deepEqual(seen, [1, 2, 1, 2]); // no more notifications after unsubscribe
 });
+
+test("undoing a deleted key restores it in its original position, not at the end", () => {
+  // Record maps are exported in key order, so undoing a delete (a person, a
+  // source) must give back the exact previous object, not re-add the key last.
+  const h = new History<{ byId: Record<string, number> }>({ byId: { a: 1, b: 2, c: 3 } });
+  h.apply((d) => void delete d.byId.a, "delete a");
+  h.undo();
+  assert.deepEqual(Object.keys(h.state.byId), ["a", "b", "c"]);
+
+  h.redo();
+  assert.deepEqual(Object.keys(h.state.byId), ["b", "c"]);
+  h.undo();
+  assert.deepEqual(Object.keys(h.state.byId), ["a", "b", "c"]);
+});
