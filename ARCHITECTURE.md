@@ -280,7 +280,9 @@ a raw `<input onChange>` straight to the store.
   tree (upload it), load Drive's, or cancel. It used to replace the open
   tree without asking. After that, every tree change is watched (via
   the family-tree store's tree reference) and pushed to Drive on a 2s
-  debounce; a conflicting remote change surfaces a "keep local / keep
+  debounce, one sync at a time (`drive/serialized.ts`: a sync requested
+  mid-upload runs once more afterwards, instead of alongside and
+  mistaking this tab's own write for a remote change); a conflicting remote change surfaces a "keep local / keep
   Drive" banner (`DriveConflictBanner`) instead of silently overwriting
   anything. While a conflict is showing nothing is uploaded, and "keep
   mine" uploads the tree as it is at that moment, including edits made

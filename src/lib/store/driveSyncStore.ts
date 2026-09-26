@@ -15,6 +15,7 @@ import {
   updateGedcomFile,
 } from "../drive/driveClient";
 import { hasConflict, planConnect } from "../drive/syncManager";
+import { serialized } from "../drive/serialized";
 import { usableToken, type AccessToken } from "../drive/token";
 import type { DriveFileRef, SyncConflict, SyncStatus } from "../drive/types";
 
@@ -69,6 +70,11 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
     }
   }
 
+  /** False once `disconnect` (or a switch to another file) happened while a call was awaiting Drive. */
+  function stillConnectedTo(fileRef: DriveFileRef): boolean {
+    return get().fileRef?.fileId === fileRef.fileId;
+  }
+
   function scheduleSync() {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => void get().syncNow(), DEBOUNCE_MS);
@@ -84,6 +90,52 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
       }
     });
   }
+
+  // One upload at a time: an overlapping run would read the metadata of
+  // this tab's own in-flight write and report it as a conflict.
+  const runSync = serialized(async () => {
+    const { fileRef, conflict } = get();
+    // Nothing goes up while the user is choosing which version to keep.
+    if (!fileRef || conflict) return;
+
+    const tree = useFamilyTreeStore.getState().tree;
+    const localText = saveGedcom(tree);
+    if (localText === lastSyncedText) {
+      useFamilyTreeStore.getState().markSaved(tree); // e.g. edited back to what Drive has
+      return;
+    }
+
+    const accessToken = tokenOrStop();
+    if (!accessToken) return;
+    set({ status: "syncing", error: null });
+    try {
+      const remoteMeta = await getFileMetadata(accessToken, fileRef.fileId);
+      if (!stillConnectedTo(fileRef)) return;
+      if (hasConflict(fileRef, remoteMeta, true)) {
+        const remoteText = await downloadFileContent(accessToken, fileRef.fileId);
+        if (!stillConnectedTo(fileRef)) return;
+        set({
+          status: "conflict",
+          conflict: {
+            reason: "remote-changed",
+            remote: { text: remoteText, file: remoteMeta },
+          },
+        });
+        return;
+      }
+
+      const updated = await updateGedcomFile(accessToken, fileRef.fileId, localText);
+      // Disconnected mid-upload: leave the tree dirty rather than resurrect the connection.
+      if (!stillConnectedTo(fileRef)) return;
+      await idbSet(IDB_KEY, updated);
+      lastSyncedText = localText;
+      // The tree that went up, not the current one: edits made during the upload are still unsaved.
+      useFamilyTreeStore.getState().markSaved(tree);
+      set({ status: "idle", fileRef: updated });
+    } catch (err) {
+      fail(err);
+    }
+  });
 
   return {
     status: "signed-out",
@@ -180,45 +232,7 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
       set({ status: "signed-out", fileRef: null, error: null, conflict: null });
     },
 
-    syncNow: async () => {
-      const { fileRef, conflict } = get();
-      // Nothing goes up while the user is choosing which version to keep.
-      if (!fileRef || conflict) return;
-
-      const tree = useFamilyTreeStore.getState().tree;
-      const localText = saveGedcom(tree);
-      if (localText === lastSyncedText) {
-        useFamilyTreeStore.getState().markSaved(tree); // e.g. edited back to what Drive has
-        return;
-      }
-
-      const accessToken = tokenOrStop();
-      if (!accessToken) return;
-      set({ status: "syncing", error: null });
-      try {
-        const remoteMeta = await getFileMetadata(accessToken, fileRef.fileId);
-        if (hasConflict(fileRef, remoteMeta, true)) {
-          const remoteText = await downloadFileContent(accessToken, fileRef.fileId);
-          set({
-            status: "conflict",
-            conflict: {
-              reason: "remote-changed",
-              remote: { text: remoteText, file: remoteMeta },
-            },
-          });
-          return;
-        }
-
-        const updated = await updateGedcomFile(accessToken, fileRef.fileId, localText);
-        await idbSet(IDB_KEY, updated);
-        lastSyncedText = localText;
-        // The tree that went up, not the current one: edits made during the upload are still unsaved.
-        useFamilyTreeStore.getState().markSaved(tree);
-        set({ status: "idle", fileRef: updated });
-      } catch (err) {
-        fail(err);
-      }
-    },
+    syncNow: () => runSync(),
 
     resolveConflict: async (choice) => {
       const { fileRef, conflict } = get();
