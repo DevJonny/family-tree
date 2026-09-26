@@ -2,17 +2,9 @@
 
 import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import { getParents } from "@/lib/gedcom/relationships";
-import type { Individual } from "@/lib/gedcom/model";
+import { personDisplayName as displayName, type Individual } from "@/lib/gedcom/model";
 
 const MAX_DEPTH = 4; // self + 3 generations back
-
-function displayName(individual: Individual): string {
-  const name = individual.names[0];
-  if (!name) return "Unknown";
-  const given = name.given ?? "";
-  const surname = name.surname ?? "";
-  return `${given} ${surname}`.trim() || name.full || "Unknown";
-}
 
 function PersonCard({ individual, selected }: { individual: Individual; selected: boolean }) {
   const selectIndividual = useFamilyTreeStore((s) => s.selectIndividual);

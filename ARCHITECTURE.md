@@ -11,7 +11,7 @@ Google Drive is the sync backend, and every edit is undoable/redoable.
   the browser), so a static export is a clean fit — no Node server, no
   Next.js Image Optimization API, no API routes needed or used.
 - **Zustand** for UI state.
-- **Immer** for undo/redo (patch-based, see below).
+- **Immer** for undo/redo (structurally shared snapshots, see below).
 - No backend database. The GEDCOM file (synced to Drive) *is* the
   database. This matches how genealogy data is normally owned by the
   user, not a vendor, and makes "export and take your data elsewhere"
@@ -83,14 +83,27 @@ citations can move between depths. New record ids come from
 `nextFreeId(tree, prefix)`, which skips every id and pointer anywhere in
 the file. The store uses it for people and families too.
 `walk.ts` (`walkTree`) is the one place that knows every container a
-note or citation can live in. Usage counts (`noteUsage`, and later
-"Cited by") and cascading deletes are built on it, so they can't miss one.
+note or citation can live in. It passes each one's owning record and a
+`where` label (the fact's label, or "Name"/"Note"/"Person"/"Family",
+inherited by anything nested), and a `citationList` hook a visitor can
+splice in place. Usage counts and cascading deletes are built on it, so
+they can't miss a container: `noteUsage`, and in `sourceUsage.ts`
+`citationUsage` ("Cited by", grouped per record), `citationCounts`,
+`deleteSource`, `repositoryUsage`/`deleteRepository` and
+`repositoryAddress` (the verbatim ADDR, flattened read-only).
+References the model can't reach (SOURs in unmodelled records or
+verbatim `extra`) are counted as "all pointers in the exported nodes
+minus modelled ones", which needs no list of verbatim buckets. They're
+shown in warnings and never deleted.
 `citations.ts` holds the pure helpers the citations UI uses:
 `describeCitation` (the one-line summary and ok/unpointed/missing status),
 `searchSources`, `newSource` and `promoteToSource`. The UI
 (`CitationList`, `NoteList`) takes a `locate(draft)` function that finds
 its list inside a draft tree, so every edit is one `updateTree` call
-wherever the list lives. Not shown yet: citations on a person's inline notes
+wherever the list lives. The Sources tab (`SourcesPanel.tsx`, 4b.4) has
+the list, the source editor with repositories inline, "Cited by" (people
+open their Details; a family opens its husband, else wife), and deletes
+behind an in-page warning. Not shown yet: citations on a person's inline notes
 (still modelled and round-tripped), and anything on families (no family editor).
 Still verbatim: NOTE under NAME, and citation EVEN/ROLE/OBJE.
 
@@ -185,10 +198,13 @@ against a toy `{count, items}` state, not `FamilyTree`, to keep it
 honestly generic).
 
 - Every edit is expressed as an Immer *recipe* — `(draft) => { ... }`.
-- `apply()` runs the recipe via `produceWithPatches`, records the forward
-  and inverse patch sets, pushes onto an undo stack, and clears the redo
-  stack (standard editor semantics — no redo "branches").
-- `undo()`/`redo()` replay inverse/forward patches via `applyPatches`.
+- `apply()` runs the recipe via `produce`, records the states before and
+  after (structurally shared, so cheap), pushes onto an undo stack, and
+  clears the redo stack (standard editor semantics — no redo "branches").
+- `undo()`/`redo()` restore those exact state objects. This used to
+  replay Immer inverse patches, but re-adding a deleted key put it at the
+  end of its map. Undoing a person, source or repository delete then
+  reordered the exported file (found in 4b.4's byte-identical undo check).
 - `reset()` swaps in a whole new state (used when loading an imported or
   Drive-synced file) *without* creating a history entry — you shouldn't
   be able to "undo" past a file load back into a different document.
@@ -311,7 +327,7 @@ silently drops the `_next/` asset directory (leading underscore).
       burial, ...), and notes — all add/edit/remove, all undoable. Backed
       by the store's generic `updateIndividual` escape hatch rather than
       one action per field.
-- [ ] Phase 4b — Sources, citations, repositories and shared notes as
+- [x] Phase 4b — Sources, citations, repositories and shared notes as
       first-class editable data (design: "Phase 4b design" above).
       Delivered in four slices, each shippable on its own:
   - [x] 4b.1 Model: `sources`/`repositories`/`notes`, `Citation` on every
@@ -320,7 +336,8 @@ silently drops the `_next/` asset directory (leading underscore).
         "Make private copy", notes carrying citations become visible.
   - [x] 4b.3 Citations UI (`src/components/CitationList.tsx`; event notes shown too): one-liners under facts, inline edit, "+ cite"
         with create-source, "Other citations", unpointed/dangling fix-ups.
-  - [ ] 4b.4 Sources tab: list, source/repository editor, Cited by,
+  - [x] 4b.4 Sources tab (`src/components/SourcesPanel.tsx`, logic in
+        `sourceUsage.ts`): list, source/repository editor, Cited by,
         delete with cascade warning.
 - [ ] Phase 4c — Media (OBJE): attachments stored in Drive.
 - [ ] Family editor — marriage/divorce and other family events, family

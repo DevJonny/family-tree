@@ -245,6 +245,15 @@ export function applyNamePatch(name: NameParts, patch: Partial<NameParts>): void
   if (valueChanged && !("full" in patch)) delete name.full;
 }
 
+/** "Given Surname" from a person's first name, falling back to the imported NAME value. */
+export function personDisplayName(individual: Individual): string {
+  const name = individual.names[0];
+  if (!name) return "Unknown";
+  const given = name.given ?? "";
+  const surname = name.surname ?? "";
+  return `${given} ${surname}`.trim() || name.full || "Unknown";
+}
+
 function nameToGedcomNode(name: NameParts): GedcomNode {
   const children: GedcomNode[] = [];
   for (const tag of Object.keys(NAME_PART_TAGS) as NamePartTag[]) {

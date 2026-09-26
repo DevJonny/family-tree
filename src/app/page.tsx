@@ -5,6 +5,7 @@ import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import { PedigreeChart } from "@/components/PedigreeChart";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { PersonDetailPanel } from "@/components/PersonDetailPanel";
+import { SourcesPanel } from "@/components/SourcesPanel";
 import { DriveConflictBanner, DriveSyncStatus } from "@/components/DriveSyncStatus";
 import { BareTextInput } from "@/components/fields";
 import type { Individual } from "@/lib/gedcom/model";
@@ -67,7 +68,8 @@ function IndividualRow({
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"pedigree" | "details">("pedigree");
+  const [activeTab, setActiveTab] = useState<"pedigree" | "details" | "sources">("pedigree");
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const {
     tree,
     fileName,
@@ -214,8 +216,23 @@ export default function Home() {
               >
                 Details
               </button>
+              <button
+                onClick={() => setActiveTab("sources")}
+                className={`px-3 py-2 ${activeTab === "sources" ? "border-b-2 border-neutral-900 text-neutral-900" : "text-neutral-400 hover:text-neutral-600"}`}
+              >
+                Sources
+              </button>
             </div>
-            {activeTab === "pedigree" || !selectedId ? (
+            {activeTab === "sources" ? (
+              <SourcesPanel
+                selectedId={selectedSourceId}
+                onSelect={setSelectedSourceId}
+                onOpenPerson={(id) => {
+                  selectIndividual(id);
+                  setActiveTab("details");
+                }}
+              />
+            ) : activeTab === "pedigree" || !selectedId ? (
               <PedigreeChart rootId={selectedId} />
             ) : (
               <PersonDetailPanel key={selectedId} id={selectedId} />
