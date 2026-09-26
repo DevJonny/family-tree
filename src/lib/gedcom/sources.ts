@@ -194,6 +194,20 @@ export function noteToNode(note: Note, level: number): GedcomNode {
   return line(level, "NOTE", note.text, noteChildren(note, level + 1));
 }
 
+/**
+ * An inline note with the same text, citations and verbatim sub-records as
+ * a shared note, fully independent of it. Swapping a link for this lets one
+ * person's copy be reworded without touching everyone else's. Levels
+ * don't matter here: verbatim nodes are re-leveled on export.
+ */
+export function privateCopyOf(shared: SharedNote, link?: NoteLink): InlineNote {
+  const copy: InlineNote = { text: shared.text, citations: structuredClone(shared.citations) };
+  // Anything that hung off the link line itself would otherwise be lost with it.
+  const extra = [...(shared.extra ?? []), ...(link?.extra ?? [])];
+  if (extra.length > 0) copy.extra = structuredClone(extra);
+  return copy;
+}
+
 export function parseSharedNote(node: GedcomNode): SharedNote {
   return { id: node.xref!, text: node.value ?? "", ...splitCitations(node.children) };
 }

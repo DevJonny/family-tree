@@ -82,6 +82,9 @@ Verbatim nodes are re-leveled on export (`atLevel`), so notes and
 citations can move between depths. New record ids come from
 `nextFreeId(tree, prefix)`, which skips every id and pointer anywhere in
 the file. The store uses it for people and families too.
+`walk.ts` (`walkTree`) is the one place that knows every container a
+note or citation can live in. Usage counts (`noteUsage`, and later
+"Cited by") and cascading deletes are built on it, so they can't miss one.
 Still verbatim: NOTE under NAME, and citation EVEN/ROLE/OBJE.
 
 #### Phase 4b design — sources, citations, repositories, shared notes
@@ -306,7 +309,7 @@ silently drops the `_next/` asset directory (leading underscore).
       Delivered in four slices, each shippable on its own:
   - [x] 4b.1 Model: `sources`/`repositories`/`notes`, `Citation` on every
         container, `Note[]`, `updateTree`; `data/private/` fixture hook.
-  - [ ] 4b.2 Notes UI: shared-note text + "Shared with N others" badge,
+  - [x] 4b.2 Notes UI (`src/components/NoteRow.tsx`, person notes for now): shared-note text + "Shared with N others" badge,
         "Make private copy", notes carrying citations become visible.
   - [ ] 4b.3 Citations UI: one-liners under facts, inline edit, "+ cite"
         with create-source, "Other citations", unpointed/dangling fix-ups.

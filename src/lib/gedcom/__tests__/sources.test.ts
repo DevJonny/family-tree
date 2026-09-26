@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { loadGedcom, nextFreeId, saveGedcom } from "../index";
+import { isNoteLink, loadGedcom, nextFreeId, noteUsage, privateCopyOf, saveGedcom } from "../index";
 
 /** Wraps record lines in a minimal HEAD/TRLR so each test shows only what it's about. */
 function gedcom(...lines: string[]): string {
@@ -291,4 +291,44 @@ test("nextFreeId never hands out an id that appears anywhere in the file, even o
   assert.equal(nextFreeId(tree, "I"), "@I2@");
   assert.equal(nextFreeId(tree, "N"), "@N3@", "@N2@ is only referenced from an unmodelled record");
   assert.equal(nextFreeId(tree, "R"), "@R1@");
+});
+
+test("noteUsage lists every record that links a shared note, from any depth, once each", () => {
+  const { tree } = loadGedcom(
+    gedcom(
+      "0 @I1@ INDI",
+      "1 NOTE @N1@",
+      "1 BIRT",
+      "2 NOTE @N1@",
+      "0 @I2@ INDI",
+      "1 DEAT",
+      "2 SOUR @S1@",
+      "3 NOTE @N1@",
+      "0 @I3@ INDI",
+      "1 NOTE @N2@",
+      "0 @F1@ FAM",
+      "1 MARR",
+      "2 NOTE @N1@",
+      "0 @S1@ SOUR",
+      "1 NOTE @N1@",
+      "0 @N1@ NOTE Shared.",
+      "0 @N2@ NOTE Other.",
+    ),
+  );
+
+  assert.deepEqual(noteUsage(tree, "@N1@").sort(), ["@F1@", "@I1@", "@I2@", "@S1@"]);
+  assert.deepEqual(noteUsage(tree, "@N2@"), ["@I3@"]);
+  assert.deepEqual(noteUsage(tree, "@N9@"), []);
+});
+
+test("a private copy keeps sub-records that were on the link itself", () => {
+  const { tree } = loadGedcom(gedcom("0 @I1@ INDI", "1 NOTE @N1@", "2 _PRIV Y", "0 @N1@ NOTE Shared."));
+  const link = tree.individuals["@I1@"].notes[0];
+  assert.ok(isNoteLink(link));
+
+  assert.deepEqual(plain(privateCopyOf(tree.notes["@N1@"], link)), {
+    text: "Shared.",
+    citations: [],
+    extra: [{ level: 2, tag: "_PRIV", value: "Y", children: [] }],
+  });
 });

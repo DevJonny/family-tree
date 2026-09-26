@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import { INDIVIDUAL_EVENT_TAGS, labelForEventTag } from "@/lib/gedcom/eventTags";
-import { TextAreaField, TextField } from "@/components/fields";
+import { TextField } from "@/components/fields";
+import { NoteRow } from "@/components/NoteRow";
 import { applyNamePatch, type EventFact, type NameParts, type Sex } from "@/lib/gedcom/model";
 import { isNoteLink } from "@/lib/gedcom/sources";
 
@@ -217,39 +218,26 @@ export function PersonDetailPanel({ id }: { id: string }) {
       <section className="space-y-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Notes</h3>
         {individual.notes.map((note, i) => (
-          <div key={i} className="flex items-start gap-2">
-            {isNoteLink(note) ? (
-              // Shared notes are read-only until the Notes UI lands (Phase 4b.2).
-              <div className="flex-1 rounded border border-dashed border-neutral-200 px-2 py-1 text-sm">
-                <div className="mb-0.5 text-[10px] uppercase tracking-wide text-neutral-400">Shared note</div>
-                <p className="whitespace-pre-wrap text-neutral-700">
-                  {tree.notes[note.noteId]?.text ?? `Missing shared note ${note.noteId}`}
-                </p>
-              </div>
-            ) : (
-              <TextAreaField
-                value={note.text}
-                onChange={(v) =>
-                  updateIndividual(
-                    id,
-                    (d) => {
-                      const draftNote = d.notes[i];
-                      if (!isNoteLink(draftNote)) draftNote.text = v;
-                    },
-                    "Edit note",
-                  )
-                }
-                rows={2}
-                className="flex-1 rounded border border-neutral-200 px-2 py-1 text-sm"
-              />
-            )}
-            <button
-              onClick={() => updateIndividual(id, (d) => void d.notes.splice(i, 1), "Remove note")}
-              className="text-xs text-red-500 hover:text-red-700"
-            >
-              Remove
-            </button>
-          </div>
+          <NoteRow
+            // Keyed by kind too, so swapping a link for a private copy remounts the field.
+            key={`${i}-${isNoteLink(note) ? note.noteId : "inline"}`}
+            note={note}
+            ownerId={id}
+            onEditText={(text) =>
+              updateIndividual(
+                id,
+                (d) => {
+                  const draftNote = d.notes[i];
+                  if (!isNoteLink(draftNote)) draftNote.text = text;
+                },
+                "Edit note",
+              )
+            }
+            onReplace={(next) => updateIndividual(id, (d) => void (d.notes[i] = next), "Make private copy of note")}
+            onRemove={() =>
+              updateIndividual(id, (d) => void d.notes.splice(i, 1), isNoteLink(note) ? "Unlink shared note" : "Remove note")
+            }
+          />
         ))}
         <div className="flex items-start gap-2">
           <textarea

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { useFamilyTreeStore } from "../familyTreeStore";
+import { isNoteLink, privateCopyOf } from "../../gedcom";
 
 const store = () => useFamilyTreeStore.getState();
 
@@ -54,4 +55,43 @@ test("updateTree edits tree-wide records as one labelled, undoable step", () => 
   store().undo();
   assert.equal(store().tree.sources["@S1@"].title, "Parish register");
   assert.equal(store().tree.notes["@N1@"].text, "Old shared text.");
+});
+
+test("a private copy of a shared note replaces the link with an independent inline note", () => {
+  load(
+    "0 @I1@ INDI",
+    "1 NOTE @N1@",
+    "0 @I2@ INDI",
+    "1 NOTE @N1@",
+    "0 @N1@ NOTE Shared research.",
+    "1 SOUR @S1@",
+    "2 PAGE p. 1",
+    "1 RIN 7",
+    "0 @S1@ SOUR",
+  );
+
+  store().updateIndividual(
+    "@I1@",
+    (d) => void (d.notes[0] = privateCopyOf(store().tree.notes["@N1@"])),
+    "Make private copy of note",
+  );
+  store().updateIndividual(
+    "@I1@",
+    (d) => {
+      const note = d.notes[0];
+      if (!isNoteLink(note)) note.text = "Reworded for Robert only.";
+    },
+    "Edit note",
+  );
+
+  assert.equal(store().tree.notes["@N1@"].text, "Shared research.", "the shared record is untouched");
+  assert.deepEqual(store().tree.individuals["@I2@"].notes, [{ noteId: "@N1@" }], "other links are untouched");
+
+  const out = store().exportToGedcomText();
+  assert.match(out, /0 @I1@ INDI\r\n1 NOTE Reworded for Robert only.\r\n2 SOUR @S1@\r\n3 PAGE p. 1\r\n2 RIN 7\r\n/);
+  assert.match(out, /0 @N1@ NOTE Shared research.\r\n1 SOUR @S1@\r\n2 PAGE p. 1\r\n1 RIN 7\r\n/);
+
+  store().undo();
+  store().undo();
+  assert.deepEqual(store().tree.individuals["@I1@"].notes, [{ noteId: "@N1@" }]);
 });
