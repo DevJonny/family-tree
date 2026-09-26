@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { useFamilyTreeStore } from "../familyTreeStore";
 import { buildFamilyTree } from "../../gedcom/model";
+import { loadGedcom } from "../../gedcom";
 
 // The store wraps a single module-level History instance, so each test
 // resets to a known-empty state via loadTree() (which itself is a
@@ -187,4 +188,43 @@ test("removeIndividual drops their CHIL sub-records so a reused id can't inherit
   );
   useFamilyTreeStore.getState().removeIndividual("@I1@");
   assert.deepEqual(useFamilyTreeStore.getState().tree.families["@F1@"].memberExtra, {});
+});
+
+test("dirty means changed since the last load or save, and undoing back to it counts as saved", () => {
+  reset();
+  const store = useFamilyTreeStore.getState;
+  assert.equal(store().dirty, false, "a freshly loaded tree is saved");
+
+  store().addIndividual({ given: "Ada" });
+  assert.equal(store().dirty, true);
+  store().undo();
+  assert.equal(store().dirty, false, "back at the loaded state");
+
+  store().addIndividual({ given: "Ada" });
+  store().markSaved();
+  assert.equal(store().dirty, false, "exported or synced");
+  store().addIndividual({ given: "Byron" });
+  assert.equal(store().dirty, true);
+  store().undo();
+  assert.equal(store().dirty, false, "back at the saved state");
+  store().undo();
+  assert.equal(store().dirty, true, "before the save is unsaved too");
+});
+
+test("markSaved(tree) for a tree that has since changed leaves the newer edits unsaved", () => {
+  reset();
+  const store = useFamilyTreeStore.getState;
+  store().addIndividual({ given: "Ada" });
+  const uploaded = store().tree; // a sync starts with this tree...
+  store().addIndividual({ given: "Byron" }); // ...and the user edits during the upload
+  store().markSaved(uploaded);
+  assert.equal(store().dirty, true);
+});
+
+test("loadTree can load a tree that isn't saved anywhere, like restored unsaved work", () => {
+  reset();
+  const { tree } = loadGedcom("0 HEAD\n0 @I1@ INDI\n1 NAME Ada /Lovelace/\n0 TRLR\n");
+  useFamilyTreeStore.getState().loadTree(tree, "restored.ged", [], { saved: false });
+  assert.equal(useFamilyTreeStore.getState().dirty, true);
+  assert.equal(useFamilyTreeStore.getState().canUndo, false);
 });

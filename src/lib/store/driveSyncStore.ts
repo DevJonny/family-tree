@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { get as idbGet, set as idbSet } from "idb-keyval";
 import { useFamilyTreeStore } from "./familyTreeStore";
-import { loadGedcom } from "../gedcom";
+import { loadGedcom, saveGedcom } from "../gedcom";
 import {
   DriveAuthError,
   createGedcomFile,
@@ -128,6 +128,7 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
           const { tree, warnings } = loadGedcom(text);
           useFamilyTreeStore.getState().loadTree(tree, fileRef.name, warnings);
         }
+        if (plan === "in-sync") useFamilyTreeStore.getState().markSaved(localTree);
         if (plan === "ask") {
           set({
             status: "conflict",
@@ -184,8 +185,12 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
       // Nothing goes up while the user is choosing which version to keep.
       if (!fileRef || conflict) return;
 
-      const localText = useFamilyTreeStore.getState().exportToGedcomText();
-      if (localText === lastSyncedText) return; // nothing new to push
+      const tree = useFamilyTreeStore.getState().tree;
+      const localText = saveGedcom(tree);
+      if (localText === lastSyncedText) {
+        useFamilyTreeStore.getState().markSaved(tree); // e.g. edited back to what Drive has
+        return;
+      }
 
       const accessToken = tokenOrStop();
       if (!accessToken) return;
@@ -207,6 +212,8 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
         const updated = await updateGedcomFile(accessToken, fileRef.fileId, localText);
         await idbSet(IDB_KEY, updated);
         lastSyncedText = localText;
+        // The tree that went up, not the current one: edits made during the upload are still unsaved.
+        useFamilyTreeStore.getState().markSaved(tree);
         set({ status: "idle", fileRef: updated });
       } catch (err) {
         fail(err);
@@ -237,10 +244,12 @@ export const useDriveSyncStore = create<DriveSyncState>((set, get) => {
       try {
         // The tree as it is now, not the snapshot from when the banner
         // appeared: edits made while it was showing must go up too.
-        const localText = useFamilyTreeStore.getState().exportToGedcomText();
+        const tree = useFamilyTreeStore.getState().tree;
+        const localText = saveGedcom(tree);
         const updated = await updateGedcomFile(accessToken, fileRef.fileId, localText);
         await idbSet(IDB_KEY, updated);
         lastSyncedText = localText;
+        useFamilyTreeStore.getState().markSaved(tree);
         set({ status: "idle", fileRef: updated, conflict: null });
       } catch (err) {
         fail(err);

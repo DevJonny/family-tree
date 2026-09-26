@@ -226,6 +226,25 @@ undo step — this is what `PersonDetailPanel` uses for every field (names,
 sex, birth/death, other events, notes) instead of the store needing a
 hand-written action per field.
 
+**Unsaved work.** `dirty` means "the tree differs from the last one
+that was loaded, exported or synced". The store keeps that tree and
+compares by reference, so undoing back to it counts as saved (this relies
+on History restoring exact state objects). Export and Drive sync call
+`markSaved(tree)` with the tree they actually wrote, so edits made during
+an upload stay unsaved. `src/components/UnsavedWork.tsx` builds on it:
+- The browser asks before the tab closes while `dirty`.
+- `lib/store/autosave.ts` writes the tree as GEDCOM text to IndexedDB
+  (debounced 1s, flushed when the page is hidden) while it's dirty, and
+  deletes it once it's saved. A leftover record therefore always means
+  work that isn't saved anywhere else.
+- On the next visit a banner offers to restore it (loaded with
+  `saved: false`, so it stays protected) or discard it. Autosave doesn't
+  start until that's answered, so the new session can't overwrite the
+  record first. Restore is disabled while there are fresh unsaved changes.
+- Known gap: there's one record per browser, not per tab. Two tabs with
+  unsaved work overwrite each other's record, and a second tab opened
+  while the first has unsaved work offers to restore it.
+
 **Text inputs commit on blur/Enter, not on every keystroke.** Found this
 the hard way while testing Phase 4 in a live browser: the first version
 called the store straight from each `<input>`'s `onChange`, so typing a
@@ -280,8 +299,8 @@ a raw `<input onChange>` straight to the store.
   consent screen and pushes them, conflict check included. Before this,
   the only way back was *Reconnect*, which re-downloaded the Drive file
   over any unsynced edits, and closing the popup left "Syncing…" hanging.
-  Edits still only live in the tab until they reach Drive; nothing is
-  saved locally yet.
+  Until they reach Drive, edits are covered by the autosave described
+  under "Unsaved work".
 - `driveSyncStore`'s network calls aren't unit tested (would need mocking
   `fetch`/GIS); its *decision logic* (`hasConflict`) is, and the store was
   verified by hand against a real Drive folder.

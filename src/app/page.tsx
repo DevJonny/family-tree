@@ -6,6 +6,7 @@ import { PedigreeChart } from "@/components/PedigreeChart";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { PersonDetailPanel } from "@/components/PersonDetailPanel";
 import { SourcesPanel } from "@/components/SourcesPanel";
+import { UnsavedWork } from "@/components/UnsavedWork";
 import { DriveConflictBanner, DriveSyncStatus } from "@/components/DriveSyncStatus";
 import { BareTextInput } from "@/components/fields";
 import type { Individual } from "@/lib/gedcom/model";
@@ -80,6 +81,7 @@ export default function Home() {
     selectedId,
     loadFromGedcomText,
     exportToGedcomText,
+    markSaved,
     selectIndividual,
     addIndividual,
     removeIndividual,
@@ -107,6 +109,7 @@ export default function Home() {
     a.download = fileName ?? "family-tree.ged";
     a.click();
     URL.revokeObjectURL(url);
+    markSaved(); // a downloaded file counts as saved
   }
 
   function handleAddPerson() {
@@ -171,6 +174,7 @@ export default function Home() {
           <DriveSyncStatus />
         </div>
 
+        <UnsavedWork />
         <DriveConflictBanner />
 
         {lastWarnings.length > 0 && (

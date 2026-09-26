@@ -25,12 +25,30 @@ interface FamilyTreeState {
   lastWarnings: GedcomParseWarning[];
   canUndo: boolean;
   canRedo: boolean;
+  /**
+   * True when the tree differs from the last one that was loaded, exported
+   * or synced to Drive. Undoing back to that tree counts as saved again.
+   */
   dirty: boolean;
   history: HistorySnapshot;
   selectedId: string | null;
 
-  /** Replaces the whole tree (e.g. from an imported/synced GEDCOM file). Not undoable. */
-  loadTree: (tree: FamilyTree, fileName?: string, warnings?: GedcomParseWarning[]) => void;
+  /**
+   * Replaces the whole tree (e.g. from an imported/synced GEDCOM file). Not
+   * undoable. Counts as saved unless `saved: false` (restored unsaved work).
+   */
+  loadTree: (
+    tree: FamilyTree,
+    fileName?: string,
+    warnings?: GedcomParseWarning[],
+    options?: { saved?: boolean },
+  ) => void;
+  /**
+   * Records that `tree` (default: the current one) is now saved somewhere,
+   * by an export or a Drive sync. Pass the tree that was actually written,
+   * so edits made while an upload was in flight stay unsaved.
+   */
+  markSaved: (tree?: FamilyTree) => void;
   loadFromGedcomText: (text: string, fileName?: string) => GedcomParseWarning[];
   exportToGedcomText: () => string;
 
@@ -69,9 +87,20 @@ interface FamilyTreeState {
 // current snapshot so components can subscribe reactively via zustand.
 const historyEngine = new History<FamilyTree>(EMPTY_TREE);
 
+// The last tree known to be saved (loaded, exported or synced), or null if
+// the current one isn't saved anywhere. Compared by reference: undo/redo
+// restore the exact tree objects, so undoing back to it reads as saved.
+let savedTree: FamilyTree | null = EMPTY_TREE;
+
 export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
   historyEngine.subscribe((tree, snapshot) => {
-    set({ tree, canUndo: historyEngine.canUndo, canRedo: historyEngine.canRedo, dirty: true, history: snapshot });
+    set({
+      tree,
+      canUndo: historyEngine.canUndo,
+      canRedo: historyEngine.canRedo,
+      dirty: tree !== savedTree,
+      history: snapshot,
+    });
   });
 
   return {
@@ -84,7 +113,8 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
     history: historyEngine.snapshot,
     selectedId: null,
 
-    loadTree: (tree, fileName, warnings = []) => {
+    loadTree: (tree, fileName, warnings = [], { saved = true } = {}) => {
+      savedTree = saved ? tree : null;
       historyEngine.reset(tree);
       set({
         tree,
@@ -92,10 +122,15 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
         lastWarnings: warnings,
         canUndo: false,
         canRedo: false,
-        dirty: false,
+        dirty: !saved,
         history: historyEngine.snapshot,
         selectedId: null,
       });
+    },
+
+    markSaved: (tree = get().tree) => {
+      savedTree = tree;
+      set({ dirty: get().tree !== savedTree });
     },
 
     loadFromGedcomText: (text, fileName) => {
