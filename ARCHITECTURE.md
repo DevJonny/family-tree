@@ -80,6 +80,87 @@ has its own sub-records (e.g. a `2 SOUR` citation under it) is kept
 verbatim in `extra` and so isn't shown in the Details tab yet. Both are
 Phase 4b.
 
+#### Phase 4b design — sources, citations, repositories, shared notes
+
+Agreed with the user before coding (media/OBJE is Phase 4c, not here).
+Priority is **import fidelity with messy real Ancestry/FamilySearch
+exports**, since that is how most data will arrive.
+
+**Model.** `FamilyTree` gains first-class `sources`, `repositories` and
+`notes` (shared `0 @N1@ NOTE` records), all keyed by id and moved out of
+`otherRoots`.
+
+```ts
+interface Citation {
+  sourceId?: string;       // "@S2@"; absent for an unpointed `SOUR <free text>`
+  description?: string;    // the value of an unpointed citation
+  page?: string;           // PAGE
+  quality?: 0 | 1 | 2 | 3; // QUAY
+  date?: string;           // DATA.DATE
+  text?: string;           // first DATA.TEXT
+  notes: Note[];
+  extra?: GedcomNode[];    // EVEN/ROLE, OBJE, _APID, extra TEXTs, ...
+}
+type Note =
+  | { text: string; citations: Citation[]; extra?: GedcomNode[] } // inline
+  | { noteId: string; extra?: GedcomNode[] };                       // link to shared record
+interface Source {
+  id: string; title?: string; author?: string; publication?: string;
+  abbreviation?: string; text?: string;
+  repositories: { repoId: string; callNumber?: string; extra?: GedcomNode[] }[];
+  notes: Note[]; extra?: GedcomNode[]; // DATA/EVEN/AGNC, _APID, RIN, CHAN, OBJE
+}
+interface Repository {
+  id: string; name?: string; website?: string;
+  notes: Note[]; extra?: GedcomNode[]; // ADDR (shown read-only), PHON, EMAIL
+}
+```
+
+- `citations: Citation[]` lives on **every** container that can hold a
+  SOUR: `EventFact`, `Individual` (person-level "Other citations"),
+  `Family`, `NameParts` and inline `Note`s. That makes "Cited by N"
+  counts and delete cascades complete by construction. SOURs the model
+  doesn't reach (inside SUBM or unmodelled records) are counted as
+  "references we can't edit" and left alone, never half-deleted.
+- `notes` on every container becomes `Note[]` (was `string[]`).
+- As with names, only the first well-formed occurrence of a typed field
+  is lifted; duplicates stay in `extra`.
+- Unpointed citations and dangling pointers (`@S99@`) round-trip
+  untouched. The UI offers "Make into source" (unpointed → new source
+  titled with the text) and "Create source" (dangling → empty source with
+  that exact id).
+- New ids are the next free `@S<n>@`/`@R<n>@`/`@N<n>@`, never reusing any
+  id that appears anywhere in the file, including inside `extra`.
+- Tree-wide edits (sources, repositories, shared notes) go through one
+  generic store action `updateTree(recipe, label)`, like `updateIndividual`.
+
+**UI.**
+- Citations show as one-liners under each fact (birth, death, events,
+  names; person-level ones in an "Other citations" block), expanding
+  inline to edit page/quality/date/text/notes. "+ cite" is a search over
+  source titles/abbreviations whose last option creates a new source;
+  source and citation are created in one undo step. Removing a citation
+  is a plain ✕ (undoable).
+- Shared notes: editing edits the record everywhere, with a "Shared with N
+  others" badge. Remove unlinks only (the record stays, even if orphaned).
+  "Make private copy" swaps the link for an inline copy. Creating shared
+  notes or linking an existing one is deferred.
+- A tree-wide **Sources** tab next to Pedigree/Details lists sources by
+  title with a filter, citation counts and an "unused" tag. Its editor
+  covers the Source fields above plus repositories (edited inline from the
+  source, with a call number each) and a **Cited by** list grouped by
+  person that jumps to their Details. Family-level citations appear there
+  too (e.g. "X & Y (family): Marriage"), but aren't editable until a
+  family editor exists.
+- Deleting a cited source shows an in-page warning ("Cited by 12 facts
+  across 5 people"), then removes the source and every citation as one
+  undo step. No `confirm()` dialogs, because they block browser automation.
+
+**Real-data testing.** `fixtures.test.ts` also runs any `.ged` in the
+gitignored `data/private/` when present. Failures there report only tag
+paths and counts, never values, so real people's data doesn't get printed.
+Each quirk found gets a fictional reproduction in `sample-extended.ged`.
+
 ### 2. Undo/redo — `src/lib/history/`
 
 Generic `History<T>` class, decoupled from the family-tree domain (tested
@@ -213,13 +294,20 @@ silently drops the `_next/` asset directory (leading underscore).
       burial, ...), and notes — all add/edit/remove, all undoable. Backed
       by the store's generic `updateIndividual` escape hatch rather than
       one action per field.
-- [ ] Phase 4b — Sources/citations, media attachments, and resolving
-      NOTE/SOUR *pointer* records (`1 NOTE @N1@`) into first-class,
-      editable data instead of the current read-only passthrough. Bigger
-      and more architecturally open (would need new model fields, new
-      GEDCOM tag support, and for media, Drive-based asset storage) —
-      left for a session where we can talk through priorities/UX rather
-      than guessing solo.
+- [ ] Phase 4b — Sources, citations, repositories and shared notes as
+      first-class editable data (design: "Phase 4b design" above).
+      Delivered in four slices, each shippable on its own:
+  - [ ] 4b.1 Model: `sources`/`repositories`/`notes`, `Citation` on every
+        container, `Note[]`, `updateTree`; `data/private/` fixture hook.
+  - [ ] 4b.2 Notes UI: shared-note text + "Shared with N others" badge,
+        "Make private copy", notes carrying citations become visible.
+  - [ ] 4b.3 Citations UI: one-liners under facts, inline edit, "+ cite"
+        with create-source, "Other citations", unpointed/dangling fix-ups.
+  - [ ] 4b.4 Sources tab: list, source/repository editor, Cited by,
+        delete with cascade warning.
+- [ ] Phase 4c — Media (OBJE): attachments stored in Drive.
+- [ ] Family editor — marriage/divorce and other family events, family
+      notes and citations (modelled in 4b, but not yet editable in the UI).
 - [x] Phase 5 — History panel (`src/components/HistoryPanel.tsx`):
       shows every edit chronologically with a "current" marker; clicking
       any past or future entry jumps straight there via the store's
