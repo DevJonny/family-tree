@@ -1,19 +1,26 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { del as idbDel, get as idbGet, set as idbSet } from "idb-keyval";
+import { del as idbDel, get as idbGet, keys as idbKeys, set as idbSet } from "idb-keyval";
 import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import {
+  autosaveKey,
   clearAutosave,
-  readAutosave,
+  readLeftovers,
   startAutosave,
-  type AutosaveRecord,
   type Autosaver,
   type KeyValueStore,
+  type Leftover,
 } from "@/lib/store/autosave";
+import { openSessionChecker, thisSessionId } from "@/lib/store/browserSession";
 import { loadGedcom } from "@/lib/gedcom";
 
-const idb: KeyValueStore = { get: (k) => idbGet(k), set: (k, v) => idbSet(k, v), del: (k) => idbDel(k) };
+const idb: KeyValueStore = {
+  get: (k) => idbGet(k),
+  set: (k, v) => idbSet(k, v),
+  del: (k) => idbDel(k),
+  keys: () => idbKeys(),
+};
 
 const peopleIn = (text: string) => text.match(/^0 @[^@]+@ INDI\b/gm)?.length ?? 0;
 
@@ -22,29 +29,25 @@ const peopleIn = (text: string) => text.match(/^0 @[^@]+@ INDI\b/gm)?.length ?? 
  * the browser asks before the tab closes, the tree is autosaved in
  * IndexedDB, and on the next visit a banner offers to restore it.
  *
- * Autosave only starts once any leftover record has been restored or
- * discarded, so a new session can't overwrite it before the user decides.
+ * Autosave starts straight away: each session writes its own record, so it
+ * can't overwrite a leftover the user hasn't decided about yet.
  */
 export function UnsavedWork() {
   const dirty = useFamilyTreeStore((s) => s.dirty);
   const loadTree = useFamilyTreeStore((s) => s.loadTree);
-  const [leftover, setLeftover] = useState<AutosaveRecord | null>(null);
+  const [leftovers, setLeftovers] = useState<Leftover[]>([]);
   const autosave = useRef<Autosaver | null>(null);
-
-  const start = () => {
-    autosave.current ??= startAutosave(idb);
-  };
 
   useEffect(() => {
     let cancelled = false;
-    readAutosave(idb)
-      .catch(() => null) // storage blocked (e.g. some private windows): nothing to restore
-      .then((record) => {
-        if (cancelled) return;
-        if (record) setLeftover(record);
-        else start();
+    autosave.current = startAutosave(idb, thisSessionId());
+    openSessionChecker()
+      .then((isOpen) => readLeftovers(idb, isOpen))
+      .catch(() => []) // storage blocked (e.g. some private windows): nothing to restore
+      .then((found) => {
+        if (!cancelled) setLeftovers(found);
       });
-    const flush = () => autosave.current?.flush();
+    const flush = () => void autosave.current?.flush();
     const onVisibility = () => document.visibilityState === "hidden" && flush();
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("pagehide", flush);
@@ -67,18 +70,24 @@ export function UnsavedWork() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  const leftover = leftovers[0];
   if (!leftover) return null;
+  const others = leftovers.length - 1;
 
-  const restore = () => {
+  const done = () => setLeftovers((current) => current.filter((l) => l.sessionId !== leftover.sessionId));
+  const restore = async () => {
     const { tree, warnings } = loadGedcom(leftover.text);
     loadTree(tree, leftover.fileName ?? undefined, warnings, { saved: false });
-    setLeftover(null);
-    start(); // the restored tree is unsaved, so this writes it straight back
+    done();
+    // It's unsaved here now, so this session's own record takes it over.
+    // Drop the old one only once that's stored, so there's never a gap.
+    await autosave.current?.flush();
+    const stored = await idb.get(autosaveKey(thisSessionId())).catch(() => undefined);
+    if (stored) await clearAutosave(idb, leftover.sessionId).catch(() => {});
   };
   const discard = () => {
-    void clearAutosave(idb).catch(() => {});
-    setLeftover(null);
-    start();
+    void clearAutosave(idb, leftover.sessionId).catch(() => {});
+    done();
   };
 
   const when = new Date(leftover.savedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -90,10 +99,11 @@ export function UnsavedWork() {
         <span className="font-medium">You have unsaved work from your last visit</span> ({when}
         {leftover.fileName ? `, ${leftover.fileName}` : ""}, {people} {people === 1 ? "person" : "people"}). It
         wasn&apos;t exported or synced to Drive.
+        {others > 0 && ` There ${others === 1 ? "is 1 more" : `are ${others} more`} after this one.`}
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <button
-          onClick={restore}
+          onClick={() => void restore()}
           disabled={dirty}
           className="rounded-md border border-amber-400 bg-white px-3 py-1 text-xs font-medium hover:bg-amber-100 disabled:opacity-50"
         >

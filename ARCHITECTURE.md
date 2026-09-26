@@ -250,13 +250,23 @@ an upload stay unsaved. `src/components/UnsavedWork.tsx` builds on it:
   (debounced 1s, flushed when the page is hidden) while it's dirty, and
   deletes it once it's saved. A leftover record therefore always means
   work that isn't saved anywhere else.
-- On the next visit a banner offers to restore it (loaded with
-  `saved: false`, so it stays protected) or discard it. Autosave doesn't
-  start until that's answered, so the new session can't overwrite the
-  record first. Restore is disabled while there are fresh unsaved changes.
-- Known gap: there's one record per browser, not per tab. Two tabs with
-  unsaved work overwrite each other's record, and a second tab opened
-  while the first has unsaved work offers to restore it.
+- Each page load is a session with its own record
+  (`family-tree:autosave:<session id>`), so tabs can't overwrite or
+  delete each other's work. It used to be one record per browser, and a
+  tab that became clean deleted another tab's unsaved work.
+- Each session holds a Web Lock named after its id for as long as the page
+  is open (`lib/store/browserSession.ts`); the browser drops it when the
+  tab closes or crashes. Records whose lock nobody holds are leftovers.
+  On the next visit a banner offers to restore them one at a time, newest
+  first (loaded with `saved: false`, so they stay protected), or discard
+  them. Restore is disabled while there are fresh unsaved changes, and the
+  old record is only deleted once this session's copy is stored.
+- Autosave starts at once, banner or not: a new session writes under its
+  own key, so it can't overwrite a leftover the user hasn't decided about.
+  (It used to wait for the answer, so work done while ignoring the banner
+  wasn't autosaved at all.)
+- Without Web Locks every other session looks closed, so a second tab may
+  offer to restore work that's still open in the first.
 
 **Text inputs commit on blur/Enter, not on every keystroke.** Found this
 the hard way while testing Phase 4 in a live browser: the first version
