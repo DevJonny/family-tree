@@ -53,11 +53,42 @@ function emitNode(node: GedcomNode, lines: string[]): void {
   }
 }
 
+/**
+ * Splits a value into CONC-sized pieces, only ever breaking *between two
+ * non-space characters*. The GEDCOM spec asks for this because many readers
+ * (including ours, for lines not followed by CONC) trim trailing whitespace:
+ * a split right after a space silently turns "grown to 22" into
+ * "grown to22" on the next import. Also never splits a UTF-16 surrogate
+ * pair (emoji, rare CJK), which would corrupt the character.
+ */
 function chunk(str: string, size: number): string[] {
   if (str.length === 0) return [];
   const out: string[] = [];
-  for (let i = 0; i < str.length; i += size) {
-    out.push(str.slice(i, i + size));
+  let rest = str;
+  while (rest.length > size) {
+    const at = findSplitPoint(rest, size);
+    out.push(rest.slice(0, at));
+    rest = rest.slice(at);
   }
+  out.push(rest);
   return out;
+}
+
+function isSafeSplit(str: string, at: number): boolean {
+  const before = str[at - 1];
+  const after = str[at];
+  const lowSurrogate = str.charCodeAt(at) >= 0xdc00 && str.charCodeAt(at) <= 0xdfff;
+  return !/\s/.test(before) && !/\s/.test(after) && !lowSurrogate;
+}
+
+function findSplitPoint(str: string, size: number): number {
+  for (let at = size; at > 0; at--) {
+    if (isSafeSplit(str, at)) return at;
+  }
+  // No safe point within the limit (e.g. a very long run of spaces): look
+  // past it instead, so we emit a slightly long line rather than lose data.
+  for (let at = size + 1; at < str.length; at++) {
+    if (isSafeSplit(str, at)) return at;
+  }
+  return str.length;
 }

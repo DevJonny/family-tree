@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import { INDIVIDUAL_EVENT_TAGS, labelForEventTag } from "@/lib/gedcom/eventTags";
 import { TextAreaField, TextField } from "@/components/fields";
-import type { EventFact, NameParts, Sex } from "@/lib/gedcom/model";
+import { applyNamePatch, type EventFact, type NameParts, type Sex } from "@/lib/gedcom/model";
 
 const SEX_OPTIONS: { value: Sex | ""; label: string }[] = [
   { value: "", label: "Unknown" },
@@ -74,7 +74,7 @@ export function PersonDetailPanel({ id }: { id: string }) {
             key={i}
             name={name}
             onChange={(patch) =>
-              updateIndividual(id, (d) => Object.assign(d.names[i], patch), "Edit name")
+              updateIndividual(id, (d) => applyNamePatch(d.names[i], patch), "Edit name")
             }
             onRemove={() =>
               updateIndividual(id, (d) => void d.names.splice(i, 1), "Remove name")

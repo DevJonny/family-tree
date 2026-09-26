@@ -18,6 +18,11 @@ npm run build   # static export -> out/
 npx tsc --noEmit
 ```
 
+Inside Claude Code's sandbox, `npm test` fails with `listen EPERM` (the tsx CLI opens an IPC pipe), so run
+`node --import tsx --test src/**/__tests__/**/*.test.ts` instead. `npm run build` and `npm run dev` also need
+local port binding (Turbopack's PostCSS worker), which the sandbox blocks unless `sandbox.network.allowLocalBinding`
+is enabled.
+
 Before committing, run tests, lint, `tsc` and the build. CI (`.github/workflows/deploy.yml`) runs tests, lint and build
 on every push to `main` and deploys to GitHub Pages, so pushing to `main` ships to production.
 
@@ -26,9 +31,12 @@ on every push to `main` and deploys to GitHub Pages, so pushing to `main` ships 
 - **Static export only** (`output: "export"`). No API routes, server actions, middleware, Next.js image optimization
   or anything else that needs a Node server. Everything runs client-side.
 - **No backend or database.** The `.ged` file in the user's Drive *is* the database. Don't add a vendor store.
-- **Never lose GEDCOM data.** Tags we don't model yet go in the `extra: GedcomNode[]` bucket on each record, and
-  unmodelled top-level records go in `FamilyTree.otherRoots`, so import → export round-trips losslessly. When you
-  model a new tag, move it out of `extra`/`otherRoots` and add a round-trip test for it.
+- **Never lose GEDCOM data.** Tags we don't model yet go in an `extra: GedcomNode[]` bucket (per record, name and
+  event) or a keyed map for sub-records of modelled lines, and unmodelled top-level records go in
+  `FamilyTree.otherRoots`, so import → export round-trips losslessly. `src/lib/gedcom/__tests__/fixtures.test.ts`
+  enforces this against every committed file in `data/`. When you model a new tag or meet a new vendor quirk, add it
+  to `data/sample-extended.ged` (fictional people only, since the repo is public) as well as a focused unit test.
+- **Edit names only via `applyNamePatch`**, which clears the imported NAME value so it's rebuilt from the edited parts.
 - **Drive scope stays `drive.file`.** The app only sees files it created.
 - `basePath`/`assetPrefix` are `/family-tree` (GitHub project page). Asset URLs must respect this.
 

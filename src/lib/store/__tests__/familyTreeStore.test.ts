@@ -168,3 +168,23 @@ test("loadTree via loadFromGedcomText resets history (a file load is not undoabl
   assert.equal(state.canRedo, false);
   assert.equal(Object.keys(state.tree.individuals).length, 0);
 });
+
+test("updateIndividualName rebuilds the exported NAME value instead of writing back the imported one", () => {
+  useFamilyTreeStore.getState().loadFromGedcomText(
+    "0 HEAD\n0 @I1@ INDI\n1 NAME George /Harlow/ Jr.\n2 GIVN George\n2 NSFX Jr.\n0 TRLR\n",
+    "t.ged",
+  );
+  useFamilyTreeStore.getState().updateIndividualName("@I1@", 0, { given: "Georgie" });
+  const exported = useFamilyTreeStore.getState().exportToGedcomText();
+  assert.match(exported, /1 NAME Georgie \/Harlow\/ Jr\./);
+  assert.doesNotMatch(exported, /1 NAME George /);
+});
+
+test("removeIndividual drops their CHIL sub-records so a reused id can't inherit them", () => {
+  useFamilyTreeStore.getState().loadFromGedcomText(
+    "0 HEAD\n0 @I1@ INDI\n1 FAMC @F1@\n0 @F1@ FAM\n1 CHIL @I1@\n2 _FREL Adopted\n0 TRLR\n",
+    "t.ged",
+  );
+  useFamilyTreeStore.getState().removeIndividual("@I1@");
+  assert.deepEqual(useFamilyTreeStore.getState().tree.families["@F1@"].memberExtra, {});
+});

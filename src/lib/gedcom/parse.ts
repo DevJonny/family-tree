@@ -8,6 +8,7 @@ import type { GedcomNode, GedcomParseResult, GedcomParseWarning } from "./types"
  *   2 DATE 4 JUL 1776
  */
 const LINE_RE = /^(\d+)\s+(?:(@[^@]+@)\s+)?([A-Za-z0-9_.]+)(?:\s(.*))?$/;
+const CONC_LINE_RE = /^\s*\d+\s+CONC(\s|$)/;
 
 /**
  * Parses raw GEDCOM text into a tree of GedcomNode roots (typically a single
@@ -31,10 +32,15 @@ export function parseGedcom(text: string): GedcomParseResult {
 
   lines.forEach((rawLine, index) => {
     const lineNo = index + 1;
-    const line = rawLine.trimEnd();
-    if (line.trim() === "") return;
+    if (rawLine.trim() === "") return;
+    // Trailing whitespace is normally noise, but not when the next line
+    // CONCatenates onto this one: other exporters do split values right
+    // after a space ("grown to " + "CONC 22"), and trimming would glue the
+    // words together.
+    const keepTrailing = CONC_LINE_RE.test(lines[index + 1] ?? "");
+    const line = keepTrailing ? rawLine.trimStart() : rawLine.trim();
 
-    const match = LINE_RE.exec(line.trim());
+    const match = LINE_RE.exec(line);
     if (!match) {
       warnings.push({ line: lineNo, message: `Could not parse line: "${line}"` });
       return;

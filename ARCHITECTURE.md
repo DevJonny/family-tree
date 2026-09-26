@@ -39,18 +39,46 @@ Google Drive is the sync backend, and every edit is undoable/redoable.
 - `model.ts` — the normalized, typed `FamilyTree` (individuals + families
   with typed names/events/relationships) that the UI actually reads and
   edits. Any GEDCOM sub-record we don't have a typed field for is kept
-  verbatim in an `extra: GedcomNode[]` bucket per record, so importing a
-  file from Ancestry/FamilySearch/Gramps and re-exporting doesn't silently
-  drop data — it just round-trips read-only until we model that tag.
-- 21 unit tests cover parse/serialize round-tripping and model
-  extraction/reconstruction, including the "unknown tag survives a full
-  roundtrip" case. Run with `npm test`.
+  verbatim — in the `extra: GedcomNode[]` bucket of the record, name or
+  event it belongs to, or in a small keyed map for sub-records of lines we
+  *do* model (`EventFact.attached` for DATE/PLAC/NOTE children like MAP
+  coordinates; `familyAsChildExtra`/`familyAsSpouseExtra` for FAMC/FAMS
+  children like `PEDI adopted`; `Family.memberExtra` for HUSB/WIFE/CHIL
+  children like Ancestry's `_FREL`/`_MREL`). Importing a file from
+  Ancestry/FamilySearch/Gramps and re-exporting loses nothing — unmodeled
+  data just round-trips read-only until we model that tag.
+- Modeling choices that matter for fidelity:
+  - A *second* BIRT/DEAT/MARR (Ancestry "alternate facts") becomes an
+    ordinary event rather than overwriting the first.
+  - Standard non-event tags (`CHAN`, `RIN`, `REFN`, `SOUR`, `OBJE`, ...;
+    see `NON_EVENT_TAGS`) go to `extra`, not the events list. Any other
+    unknown tag is treated as an event so it's visible and editable.
+  - `NameParts.full` is the imported NAME value, written back verbatim
+    until a name part changes. **Edit names only via `applyNamePatch`**,
+    which clears `full` so export rebuilds the value from parts. Parts
+    derived from the value (no GIVN/SURN/NSFX line in the file) are listed
+    in `NameParts.derived` and not written out as new lines.
+  - CONC wrapping only splits between two non-space characters (and never
+    inside a surrogate pair); the parser keeps a line's trailing space when
+    the next line is a CONC. Previously ~1 in 6 wrap points in long notes
+    silently lost a space.
+- **Fidelity is enforced by `__tests__/fixtures.test.ts`:** every committed
+  file in `data/` (the official `555SAMPLE.GED`, and `sample-extended.ged`
+  — a fictional superset built to contain the quirks real vendor exports
+  have; its HEAD NOTE lists them) must import -> export with nothing lost
+  or added (sibling order aside), and exporting twice must be
+  byte-identical. `__tests__/fidelity.test.ts` has one focused test per
+  bug that suite found. Add new quirks to the fixture, not just to unit
+  tests. Run with `npm test`.
 
 **Known limitation (v1):** `NOTE`/`SOUR` *pointer* records (`1 NOTE @N1@`
 referring to a top-level `0 @N1@ NOTE` record) aren't resolved yet — only
 inline note values are. Top-level NOTE/SOUR/REPO/SUBM records are
 preserved verbatim in `FamilyTree.otherRoots` so they aren't lost, just
-not yet editable as first-class data.
+not yet editable as first-class data. Likewise a person/family NOTE that
+has its own sub-records (e.g. a `2 SOUR` citation under it) is kept
+verbatim in `extra` and so isn't shown in the Details tab yet. Both are
+Phase 4b.
 
 ### 2. Undo/redo — `src/lib/history/`
 

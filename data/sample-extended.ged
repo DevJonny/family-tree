@@ -16,6 +16,9 @@
 2 CONT
 2 CONT Deliberate edge cases, mirroring what real Ancestry / FamilySearch / MyHeritage exports contain:
 2 CONT - Source citations on events, on names, on families and directly on people (1 SOUR), with PAGE, QUAY, DATA/DATE/TEXT, NOTE, OBJE, EVEN/ROLE and Ancestry _APID.
+2 CONT - An alternate (second) BIRT fact from a different source, as Ancestry exports them.
+2 CONT - Ancestry/FTM _FREL/_MREL relationship flags under CHIL, and PEDI under FAMC.
+2 CONT - A NOTE with its own SOUR citation underneath it.
 2 CONT - One source cited from many places; one orphan source (@S9@) that nothing cites.
 2 CONT - An unpointed citation (2 SOUR <free text> with no @S..@ record), allowed by 5.5.1.
 2 CONT - A dangling pointer: @I8@ cites @S99@, which does not exist.
@@ -81,6 +84,12 @@
 5 CONC  as a young man. He leaves a widow, a son Joseph, and two daughters.
 5 CONT The funeral will be held from the house on Monday afternoon.
 3 NOTE Obituary gives the day of death as "Friday last", which matches 14 Apr 1905.
+1 BIRT
+2 DATE ABT 1823
+2 PLAC Connecticut, United States of America
+2 SOUR @S2@
+3 PAGE Year: 1850; Census Place: Weston, Fairfield, Connecticut; Roll: M432_39; Page: 211A
+3 NOTE Age 27 in the 1850 census; an alternate birth fact that disagrees with the Bible.
 1 BURI
 2 DATE 18 APR 1905
 2 PLAC Spring Hill Cemetery, Stamford, Fairfield, Connecticut, United States of America
@@ -414,6 +423,9 @@
 2 PLAC Stamford, Fairfield, Connecticut, United States of America
 1 OCCU Machinist
 2 DATE FROM 1910 TO 1950
+1 NOTE Worked at the Pratt & Whitney plant in Hartford.
+2 SOUR @S7@
+3 PAGE 4 Mar 1935, p. 9, "Local Men Honored"
 1 DEAT
 2 DATE 1960
 2 PLAC Hartford, Hartford, Connecticut, United States of America
@@ -490,6 +502,8 @@
 0 @F2@ FAM
 1 HUSB @I1@
 1 CHIL @I3@
+2 _FREL Adopted
+2 _MREL Unknown
 0 @F3@ FAM
 1 HUSB @I4@
 1 WIFE @I5@

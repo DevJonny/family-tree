@@ -5,6 +5,7 @@ import type { Draft } from "immer";
 import { History } from "../history/historyStore";
 import type { HistorySnapshot } from "../history/types";
 import {
+  applyNamePatch,
   buildFamilyTree,
   type Family,
   type FamilyTree,
@@ -126,7 +127,9 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
       historyEngine.apply((draft) => {
         const indi = draft.individuals[id];
         if (!indi) return;
-        indi.names[index] = { ...indi.names[index], ...patch };
+        const name = indi.names[index];
+        if (!name) return;
+        applyNamePatch(name, patch);
       }, "Edit name");
     },
 
@@ -147,6 +150,9 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
           if (fam.husband === id) fam.husband = undefined;
           if (fam.wife === id) fam.wife = undefined;
           fam.children = fam.children.filter((c) => c !== id);
+          // nextXref reuses freed ids, so drop this person's link data too,
+          // or a future person given the same id would inherit it.
+          if (fam.memberExtra) delete fam.memberExtra[id];
         }
       }, "Remove individual");
     },
