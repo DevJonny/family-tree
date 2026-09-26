@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import { PedigreeChart } from "@/components/PedigreeChart";
 import { HistoryPanel } from "@/components/HistoryPanel";
+import { DriveConflictBanner, DriveSyncStatus } from "@/components/DriveSyncStatus";
 
 export default function Home() {
   const {
@@ -104,7 +105,11 @@ export default function Home() {
           >
             + Add person
           </button>
+          <div className="mx-2 h-5 w-px bg-neutral-300" />
+          <DriveSyncStatus />
         </div>
+
+        <DriveConflictBanner />
 
         {lastWarnings.length > 0 && (
           <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">

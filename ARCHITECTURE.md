@@ -5,9 +5,11 @@ Google Drive is the sync backend, and every edit is undoable/redoable.
 
 ## Stack
 
-- **Next.js 16 (App Router) + TypeScript + Tailwind**, deployed on Vercel.
-  Chosen because the whole app can run client-side (no database needed —
-  see below), and Vercel/Next was already the ambient tooling context.
+- **Next.js 16 (App Router) + TypeScript + Tailwind**, statically exported
+  (`output: "export"`) and deployed to **GitHub Pages**. The whole app is
+  client-side already (GEDCOM parsing, undo/redo, Drive sync all run in
+  the browser), so a static export is a clean fit — no Node server, no
+  Next.js Image Optimization API, no API routes needed or used.
 - **Zustand** for UI state.
 - **Immer** for undo/redo (patch-based, see below).
 - No backend database. The GEDCOM file (synced to Drive) *is* the
@@ -79,12 +81,9 @@ domain actions (`addIndividual`, `updateIndividualName`,
 `redo`). This is the only file that should grow as more editing features
 are added — new actions call `history.apply(recipe, label)`.
 
-### 4. Google Drive sync — `src/lib/drive/`
+### 4. Google Drive sync — `src/lib/drive/` + `src/lib/store/driveSyncStore.ts`
 
-**Status: scaffolded, not wired into the UI yet.** The network/OAuth code
-exists and type-checks, but calling it will fail until you complete the
-one-time setup below — wiring a "Connect to Drive" button before that
-would just ship a button that always errors.
+**Status: wired end-to-end.**
 
 - `driveClient.ts` — OAuth via Google Identity Services (client-side
   token flow, no backend) + Drive REST v3 calls (list/create/update
@@ -93,37 +92,71 @@ would just ship a button that always errors.
   a normal, visible "Family Tree App" folder (not the hidden
   `appDataFolder`) so you can find it, back it up, or open it in another
   tool.
-- `syncManager.ts` — sync/conflict logic, kept separate from the network
+- `syncManager.ts` — sync/conflict *logic*, kept separate from the network
   calls so it's unit-testable without mocking `fetch`. `hasConflict()`
   decides whether an upload would clobber a change made elsewhere
   (another device, the Drive web UI) since our last sync, comparing
   `md5Checksum` (falls back to `modifiedTime`).
+- `driveSyncStore.ts` — the orchestrator. "Connect Google Drive" requests
+  an access token, finds-or-creates `Family Tree App/family-tree.ged`,
+  downloads and loads it. After that, every tree change is watched (via
+  the family-tree store's tree reference) and pushed to Drive on a 2s
+  debounce; a conflicting remote change surfaces a "keep local / keep
+  Drive" banner (`DriveConflictBanner`) instead of silently overwriting
+  anything. The connected file's id is cached in IndexedDB (`idb-keyval`)
+  so reconnecting on the same browser doesn't re-prompt which file to use.
 
-**Setup required before Drive sync can work (you'll need to do this —
-it can't be done from inside the codebase):**
+**Known limitations (v1):**
+- The OAuth access token is session-only and expires after roughly an
+  hour; a sync failing after that shows "Sync error" with a *Reconnect*
+  button rather than silently refreshing. Silent token renewal (GIS
+  supports it) is a reasonable Phase-2b follow-up.
+- `driveSyncStore`'s network calls aren't unit tested (would need mocking
+  `fetch`/GIS); its *decision logic* (`hasConflict`) is, and the store was
+  verified by hand against a real Drive folder.
+- If two devices connect for the first time with no shared history, the
+  most-recently-modified file in the Drive folder wins — there's no
+  "which file did you mean" picker yet.
 
-1. Create a project in the [Google Cloud Console](https://console.cloud.google.com/).
-2. Enable the **Google Drive API** for it.
-3. Configure the **OAuth consent screen** (External is fine for personal
-   use; add yourself as a test user if it stays in "Testing" status).
-4. Create an **OAuth 2.0 Client ID** (Application type: *Web application*)
-   with your dev/prod URLs under "Authorized JavaScript origins" (e.g.
-   `http://localhost:3000` and your Vercel domain).
-5. Put the client ID in `.env.local`:
-   ```
-   NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-   ```
+**One-time setup already done for this deployment:**
 
-Once that's done, the next build step is wiring `syncManager` into the
-Zustand store (connect/sync/conflict-resolution UI) — see Roadmap below.
+1. ✅ Google Cloud project + Drive API enabled, OAuth consent screen, and
+   an OAuth 2.0 Web application Client ID (baked into
+   `.github/workflows/deploy.yml` as `NEXT_PUBLIC_GOOGLE_CLIENT_ID` — this
+   is safe to keep in the repo since it's a *public* client identifier,
+   not a secret; Google scopes access by Authorized JavaScript Origins,
+   not by hiding this value).
+2. ⚠️ **You need to verify** the OAuth client's **Authorized JavaScript
+   Origins** (Google Cloud Console → APIs & Services → Credentials)
+   include both:
+   - `http://localhost:3000` (local dev)
+   - `https://devjonny.github.io` (production — GitHub Pages serves from
+     the origin, not the full `/family-tree` path)
+
+   If sign-in fails with a `redirect_uri_mismatch`-style error, this is
+   almost always why.
+
+## Deployment
+
+Static export to **GitHub Pages** via GitHub Actions
+(`.github/workflows/deploy.yml`): on every push to `main`, it runs the
+test suite + lint, builds (`output: "export"`), and publishes `out/` with
+`actions/deploy-pages`. Live at **https://devjonny.github.io/family-tree/**.
+
+`next.config.ts` sets `basePath`/`assetPrefix` to `/family-tree` to match
+GitHub's project-page URL scheme. If you ever move to a custom domain or
+a user/org page (`devjonny.github.io` itself), delete those two lines —
+root-hosted sites don't need a path prefix. `public/.nojekyll` is required
+alongside this — without it, GitHub Pages' default Jekyll processing
+silently drops the `_next/` asset directory (leading underscore).
 
 ## Roadmap
 
 - [x] Phase 1 — GEDCOM parse/serialize/model, undo/redo engine, minimal
       import/edit/export UI.
-- [ ] Phase 2 — Google Drive sync wired end-to-end (needs your OAuth
-      client ID from the setup steps above), including conflict-resolution
-      UI.
+- [x] Phase 2 — Google Drive sync wired end-to-end: connect, auto-sync on
+      edit, conflict detection with a keep-local/keep-remote resolution
+      UI. See "Known limitations" above for what's still rough.
 - [x] Phase 3 — Pedigree chart (`src/components/PedigreeChart.tsx`):
       click a person to see 4 generations of ancestors, with "+ Add
       father/mother" slots that create and link a new person in place.
@@ -142,8 +175,11 @@ Zustand store (connect/sync/conflict-resolution UI) — see Roadmap below.
 ## Local dev
 
 ```
-npm run dev     # http://localhost:3000
+npm run dev     # http://localhost:3000/family-tree/  (basePath applies in dev too)
 npm test        # unit tests (node:test via tsx)
 npm run lint
-npm run build
+npm run build   # static export -> out/
 ```
+
+`npm run dev` needs `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set in `.env.local`
+(gitignored) for Drive sync to work locally — see the setup section above.

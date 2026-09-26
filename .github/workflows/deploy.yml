@@ -1,0 +1,49 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build
+        env:
+          # Public OAuth client ID for Google Drive sync - not a secret
+          # (Google web-app client IDs are meant to be embedded in
+          # client-side code; access is scoped by the Authorized
+          # JavaScript Origins configured in the Google Cloud Console,
+          # not by keeping this value hidden). See ARCHITECTURE.md.
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: "101133685796-p43f4uqejgt9lgce4lvibrnoam8oegb1.apps.googleusercontent.com"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
