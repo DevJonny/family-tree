@@ -1,5 +1,6 @@
 "use client";
 
+import { tokenFromResponse, type AccessToken } from "./token";
 import type { DriveFileRef } from "./types";
 
 /**
@@ -59,12 +60,22 @@ export function getGoogleClientId(): string {
 }
 
 /**
- * Requests a short-lived Drive access token via the GIS token client
- * (implicit-style OAuth, no backend required). `prompt: ""` first attempts
- * a silent grant (works if the user already consented this session);
- * callers should retry with an interactive prompt if that fails.
+ * Sign-in is needed (again): the user closed or blocked the Google popup,
+ * refused access, or Drive rejected the token (401). The sync store keeps
+ * local edits and asks the user to sign in, rather than treating it as a
+ * failure to retry.
  */
-export async function requestAccessToken(options: { interactive: boolean }): Promise<string> {
+export class DriveAuthError extends Error {
+  name = "DriveAuthError";
+}
+
+/**
+ * Requests a Drive access token via the GIS token client (browser-only
+ * OAuth, no backend). Opens Google's popup, so call it from a click.
+ * `prompt: ""` only shows the consent screen the first time; after that the
+ * popup closes by itself once the user is recognised.
+ */
+export async function requestAccessToken(): Promise<AccessToken> {
   await loadGoogleIdentityServices();
   const clientId = getGoogleClientId();
 
@@ -73,15 +84,31 @@ export async function requestAccessToken(options: { interactive: boolean }): Pro
       client_id: clientId,
       scope: DRIVE_SCOPE,
       callback: (response) => {
-        if (response.error) {
-          reject(new Error(`Google auth failed: ${response.error}`));
-        } else {
-          resolve(response.access_token);
-        }
+        if (response.error) reject(new DriveAuthError(`Google sign-in failed: ${response.error}`));
+        else resolve(tokenFromResponse(response, Date.now()));
       },
+      // Without this, closing the popup left the promise (and "Syncing…") hanging forever.
+      error_callback: (error) =>
+        reject(
+          new DriveAuthError(
+            error.type === "popup_closed"
+              ? "Google sign-in was closed before it finished."
+              : error.type === "popup_failed_to_open"
+                ? "Google sign-in popup was blocked. Allow popups for this site and try again."
+                : "Google sign-in failed.",
+          ),
+        ),
     });
-    client.requestAccessToken({ prompt: options.interactive ? "consent" : "" });
+    client.requestAccessToken({ prompt: "" });
   });
+}
+
+/** Throws for a failed response: a DriveAuthError for 401, else a plain Error. */
+async function failIfNotOk(res: Response, what: string): Promise<Response> {
+  if (res.ok) return res;
+  const body = await res.text().catch(() => "");
+  if (res.status === 401) throw new DriveAuthError(`Drive sign-in expired (${what})`);
+  throw new Error(`${what} failed: ${res.status} ${body}`);
 }
 
 async function driveFetch(accessToken: string, path: string, init: RequestInit = {}): Promise<Response> {
@@ -89,11 +116,7 @@ async function driveFetch(accessToken: string, path: string, init: RequestInit =
     ...init,
     headers: { ...init.headers, Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Drive API ${path} failed: ${res.status} ${body}`);
-  }
-  return res;
+  return failIfNotOk(res, `Drive API ${path}`);
 }
 
 /** Finds (or creates) the "Family Tree App" folder this app stores its GEDCOM file in. */
@@ -151,7 +174,7 @@ export async function createGedcomFile(
       body,
     },
   );
-  if (!res.ok) throw new Error(`Drive upload failed: ${res.status} ${await res.text()}`);
+  await failIfNotOk(res, "Drive upload");
   const f = (await res.json()) as { id: string; name: string; modifiedTime: string; md5Checksum?: string };
   return { fileId: f.id, name: f.name, modifiedTime: f.modifiedTime, md5Checksum: f.md5Checksum };
 }
@@ -169,7 +192,7 @@ export async function updateGedcomFile(
       body: content,
     },
   );
-  if (!res.ok) throw new Error(`Drive update failed: ${res.status} ${await res.text()}`);
+  await failIfNotOk(res, "Drive update");
   const f = (await res.json()) as { id: string; name: string; modifiedTime: string; md5Checksum?: string };
   return { fileId: f.id, name: f.name, modifiedTime: f.modifiedTime, md5Checksum: f.md5Checksum };
 }
@@ -189,7 +212,8 @@ declare global {
           initTokenClient: (config: {
             client_id: string;
             scope: string;
-            callback: (response: { access_token: string; error?: string }) => void;
+            callback: (response: { access_token: string; expires_in?: number | string; error?: string }) => void;
+            error_callback?: (error: { type: "popup_failed_to_open" | "popup_closed" | "unknown" }) => void;
           }) => { requestAccessToken: (opts: { prompt: string }) => void };
         };
       };

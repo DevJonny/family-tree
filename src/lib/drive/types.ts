@@ -3,6 +3,8 @@ export type SyncStatus =
   | "idle"
   | "syncing"
   | "conflict"
+  /** Signed in before, but the token expired or was refused. Local edits are kept until the user signs in again. */
+  | "needs-auth"
   | "error";
 
 /** Metadata about the GEDCOM file this app owns on the user's Drive. */

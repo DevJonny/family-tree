@@ -263,10 +263,18 @@ a raw `<input onChange>` straight to the store.
   so reconnecting on the same browser doesn't re-prompt which file to use.
 
 **Known limitations (v1):**
-- The OAuth access token is session-only and expires after roughly an
-  hour; a sync failing after that shows "Sync error" with a *Reconnect*
-  button rather than silently refreshing. Silent token renewal (GIS
-  supports it) is a reasonable Phase-2b follow-up.
+- The OAuth access token lasts about an hour and can't be renewed in the
+  background: the browser token flow has no refresh token (that needs a
+  backend), and a new token means a popup, which browsers block outside a
+  click. So `syncNow` stops *before* using a token within a minute of
+  expiry (`drive/token.ts`), and a 401 or a closed/blocked popup is a
+  `DriveAuthError`. Both put sync in `needs-auth`: edits stay in the
+  app, and "Sign in again" (`resume()`) gets a new token without the
+  consent screen and pushes them, conflict check included. Before this,
+  the only way back was *Reconnect*, which re-downloaded the Drive file
+  over any unsynced edits, and closing the popup left "Syncing…" hanging.
+  Edits still only live in the tab until they reach Drive; nothing is
+  saved locally yet.
 - `driveSyncStore`'s network calls aren't unit tested (would need mocking
   `fetch`/GIS); its *decision logic* (`hasConflict`) is, and the store was
   verified by hand against a real Drive folder.

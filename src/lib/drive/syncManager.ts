@@ -30,23 +30,3 @@ export function hasConflict(
 ): boolean {
   return hasUnsyncedLocalEdits && remoteChangedSinceLastSync(lastSynced, remote);
 }
-
-/**
- * NOT YET WIRED INTO THE UI.
- *
- * This will become the orchestrator that:
- *   1. On connect: ensures the app folder exists, finds or creates the
- *      GEDCOM file, downloads it, and loads it into the FamilyTree store
- *      via `history.reset()` (not undoable — it's a fresh load).
- *   2. On local edits (debounced ~2s): re-checks remote metadata via
- *      getFileMetadata, calls hasConflict(), and either uploads
- *      (updateGedcomFile) or surfaces a SyncConflict for the user to
- *      resolve (keep local / keep remote / manual merge).
- *   3. Persists { fileRef, lastSyncedAt } to idb-keyval so reconnecting
- *      doesn't require re-picking the file.
- *
- * Left as a stub until NEXT_PUBLIC_GOOGLE_CLIENT_ID is configured (see
- * ARCHITECTURE.md) — wiring it up before that would just produce a
- * "Connect to Drive" button that always fails.
- */
-export {};
