@@ -31,6 +31,7 @@
 2 CONT - Non-ASCII place names (Bø, Kraków) and a gap in family ids (no @F9@).
 2 CONT - A prefix written both in the NAME value and as NPFX, a SEX line with a citation,
 2 CONT   a CALN with a MEDI under it, and a shared NOTE with its own CHAN and _UID.
+2 CONT - Surname prefixes (SPFX): one with its own SURN line, and one only in the NAME value.
 0 @U1@ SUBM
 1 NAME Reldon Poulson
 1 ADDR
@@ -490,6 +491,16 @@
 2 DATE 1912
 1 FAMS @F12@
 1 RIN 22
+0 @I23@ INDI
+1 NAME Pieter /van der Berg/
+2 SPFX van der
+1 SEX M
+0 @I24@ INDI
+1 NAME Anneke /de Vries/
+2 GIVN Anneke
+2 SURN Vries
+2 SPFX de
+1 SEX F
 0 @F1@ FAM
 1 HUSB @I1@
 1 WIFE @I2@

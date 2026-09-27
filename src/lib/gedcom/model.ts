@@ -43,6 +43,8 @@ export interface NameParts {
   full?: string;
   given?: string;
   surname?: string;
+  /** SPFX ("van", "de la"): written inside the slashes, before the surname. */
+  surnamePrefix?: string;
   prefix?: string;
   suffix?: string;
   nickname?: string;
@@ -56,7 +58,7 @@ export interface NameParts {
   derived?: DerivablePart[];
   /** Omitted when there are none, like `extra`. */
   citations?: Citation[];
-  /** Other NAME sub-records (NOTE, SPFX, _MARNM, ...), verbatim. */
+  /** Other NAME sub-records (NOTE, _MARNM, ...), verbatim. */
   extra?: GedcomNode[];
 }
 
@@ -65,6 +67,7 @@ type DerivablePart = "given" | "surname" | "suffix";
 const NAME_PART_TAGS = {
   GIVN: "given",
   SURN: "surname",
+  SPFX: "surnamePrefix",
   NPFX: "prefix",
   NSFX: "suffix",
   NICK: "nickname",
@@ -238,11 +241,22 @@ function parseName(nameNode: GedcomNode): NameParts {
     if (derived.length > 0) parts.derived = derived;
     // "Dr. John /Smith/" with `NPFX Dr.`: the prefix is its own part, and
     // the rebuilt value adds it back, so it mustn't also be in the given name.
+    // Likewise "John /van Smith/" with `SPFX van`: the surname is "Smith".
+    if (derived.includes("surname") && parts.surnamePrefix) {
+      const rest = withoutLeadingWord(parts.surname!, surnamePrefixWords(parts.surnamePrefix));
+      if (rest === "") {
+        delete parts.surname;
+        parts.derived = (parts.derived ?? []).filter((p) => p !== "surname");
+        if (parts.derived.length === 0) delete parts.derived;
+      } else if (rest !== undefined) {
+        parts.surname = rest;
+      }
+    }
     if (derived.includes("given") && parts.prefix) {
       const rest = withoutLeadingWord(parts.given!, parts.prefix);
       if (rest === "") {
         delete parts.given;
-        parts.derived = derived.filter((p) => p !== "given");
+        parts.derived = (parts.derived ?? []).filter((p) => p !== "given");
         if (parts.derived.length === 0) delete parts.derived;
       } else if (rest !== undefined) {
         parts.given = rest;
@@ -260,19 +274,28 @@ function withoutLeadingWord(text: string, word: string): string | undefined {
   return text.startsWith(`${word} `) ? text.slice(word.length).trim() : undefined;
 }
 
-/** Rebuilds a NAME line value from parts: "Prefix Given /Surname/ Suffix". */
+/** SPFX may list several prefixes with commas ("van,der"); the NAME value has them space-separated. */
+function surnamePrefixWords(spfx: string): string {
+  return spfx.split(",").map((w) => w.trim()).filter(Boolean).join(" ");
+}
+
+/** Rebuilds a NAME line value from parts: "Prefix Given /SurnamePrefix Surname/ Suffix". */
 function nameValueFromParts(name: NameParts): string {
+  const surname = [name.surnamePrefix && surnamePrefixWords(name.surnamePrefix), name.surname]
+    .filter((p) => p !== undefined && p !== "")
+    .join(" ");
+  const hasSurname = name.surname !== undefined || !!name.surnamePrefix;
   return [
     name.prefix,
     name.given,
-    name.surname !== undefined ? `/${name.surname}/` : undefined,
+    hasSurname ? `/${surname}/` : undefined,
     name.suffix,
   ]
     .filter((p) => p !== undefined && p !== "")
     .join(" ");
 }
 
-const NAME_VALUE_PARTS = ["given", "surname", "prefix", "suffix"] as const;
+const NAME_VALUE_PARTS = ["given", "surname", "surnamePrefix", "prefix", "suffix"] as const;
 
 /**
  * The one correct way to edit a name: applies the patch in place (works on

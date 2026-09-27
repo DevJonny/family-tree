@@ -62,7 +62,9 @@ Google Drive is the sync backend, and every edit is undoable/redoable.
     in `NameParts.derived` and not written out as new lines. A given name
     derived from "Dr. John /Smith/" when the file also has `NPFX Dr.`
     drops the prefix, since the rebuilt value adds it back (it used to
-    come out as "Dr. Dr. John").
+    come out as "Dr. Dr. John"). `SPFX` is a part too (`surnamePrefix`),
+    written inside the slashes on a rebuild ("John /van Smith/"); it used
+    to sit in `extra`, so any name edit dropped "van" from the value.
   - Sub-records of a line lifted into a typed field (PLAC's MAP, DATE's
     TIME, SEX's SOUR) describe *that value* (`AttachedLines`). They're
     written back only while the field still holds it: changing London to

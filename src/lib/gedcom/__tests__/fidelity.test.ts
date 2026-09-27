@@ -274,6 +274,30 @@ test("a NAME value that is only the prefix doesn't become a given name", () => {
   assert.equal(tree.individuals["@I1@"].names[0].given, undefined);
 });
 
+test("a surname prefix (SPFX) stays in the NAME value when another part is edited", () => {
+  const { tree } = loadGedcom(gedcom(`
+0 @I1@ INDI
+1 NAME John /van Smith/
+2 GIVN John
+2 SURN Smith
+2 SPFX van`));
+  applyNamePatch(tree.individuals["@I1@"].names[0], { given: "Johan" });
+  const lines = saveGedcom(tree).split("\r\n");
+  assert.ok(lines.includes("1 NAME Johan /van Smith/"), lines.join("\n"));
+  assert.ok(lines.includes("2 SPFX van"));
+});
+
+test("a surname derived from a NAME value that includes the SPFX doesn't double it", () => {
+  const { tree } = loadGedcom(gedcom(`
+0 @I1@ INDI
+1 NAME John /van der Berg/
+2 SPFX van der`));
+  const name = tree.individuals["@I1@"].names[0];
+  assert.equal(name.surname, "Berg");
+  applyNamePatch(name, { given: "Johan" });
+  assert.ok(saveGedcom(tree).split("\r\n").includes("1 NAME Johan /van der Berg/"));
+});
+
 test("a SEX line with a citation is read, and changing it doesn't duplicate the line", () => {
   const text = gedcom(`
 0 @I1@ INDI
