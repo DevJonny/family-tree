@@ -124,7 +124,13 @@ export interface Individual {
   events: EventFact[];
   familyAsChild: string[];
   familyAsSpouse: string[];
-  /** Sub-records under a FAMC line (PEDI "adopted", STAT, NOTE), keyed by family id. */
+  /**
+   * The child's relationship to each family (FAMC's PEDI: birth, adopted,
+   * foster, sealed), keyed by family id. Kept as written, so an unusual
+   * value round-trips.
+   */
+  pedigree?: Record<string, string>;
+  /** Other sub-records under a FAMC line (STAT, NOTE), keyed by family id. */
   familyAsChildExtra?: Record<string, GedcomNode[]>;
   /** Sub-records under a FAMS line (NOTE), keyed by family id. */
   familyAsSpouseExtra?: Record<string, GedcomNode[]>;
@@ -442,7 +448,16 @@ function buildIndividual(node: GedcomNode): Individual {
       case "FAMC":
         if (value && !indi.familyAsChild.includes(value)) {
           indi.familyAsChild.push(value);
-          indi.familyAsChildExtra = keepLinkExtra(indi.familyAsChildExtra, value, child);
+          // Only a lone, plain PEDI is lifted; one with sub-records (GEDCOM
+          // 7's PHRASE), or two of them, stay verbatim.
+          const pedis = child.children.filter((c) => c.tag === "PEDI");
+          const pedi = pedis.length === 1 ? pedis[0] : undefined;
+          let link = child;
+          if (pedi?.value && pedi.children.length === 0) {
+            indi.pedigree = { ...indi.pedigree, [value]: pedi.value };
+            link = { ...child, children: child.children.filter((c) => c !== pedi) };
+          }
+          indi.familyAsChildExtra = keepLinkExtra(indi.familyAsChildExtra, value, link);
           continue;
         }
         break;
@@ -579,7 +594,12 @@ function individualToGedcomNode(indi: Individual): GedcomNode {
   if (indi.birth) children.push(eventToGedcomNode(1, indi.birth));
   if (indi.death) children.push(eventToGedcomNode(1, indi.death));
   for (const event of indi.events) children.push(eventToGedcomNode(1, event));
-  for (const famc of indi.familyAsChild) children.push(pointerNode("FAMC", famc, indi.familyAsChildExtra));
+  for (const famc of indi.familyAsChild) {
+    const node = pointerNode("FAMC", famc, indi.familyAsChildExtra);
+    const pedi = indi.pedigree?.[famc];
+    if (pedi) node.children = [{ level: 2, tag: "PEDI", value: pedi, children: [] }, ...node.children];
+    children.push(node);
+  }
   for (const fams of indi.familyAsSpouse) children.push(pointerNode("FAMS", fams, indi.familyAsSpouseExtra));
   for (const note of indi.notes) children.push(noteToNode(note, 1));
   for (const citation of indi.citations) children.push(citationToNode(citation, 1));

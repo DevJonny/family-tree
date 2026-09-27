@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type { Draft } from "immer";
 import { History } from "../history/historyStore";
+import { deleteIndividual } from "../gedcom/membership";
 import type { HistorySnapshot } from "../history/types";
 import {
   applyNamePatch,
@@ -198,19 +199,9 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
     },
 
     removeIndividual: (id) => {
-      historyEngine.apply((draft) => {
-        delete draft.individuals[id];
-        // Detach from any families referencing this person so the tree
-        // never points at a dangling xref.
-        for (const fam of Object.values(draft.families)) {
-          if (fam.husband === id) fam.husband = undefined;
-          if (fam.wife === id) fam.wife = undefined;
-          fam.children = fam.children.filter((c) => c !== id);
-          // Once nothing points at this id, nextFreeId may hand it out again,
-          // so drop this person's link data too or they'd inherit it.
-          if (fam.memberExtra) delete fam.memberExtra[id];
-        }
-      }, "Remove individual");
+      // Unlinks them from every family on both sides (link data included,
+      // so a reused id can't inherit it) and deletes families left empty.
+      historyEngine.apply((draft) => deleteIndividual(draft, id), "Remove individual");
     },
 
     addParent: (childId, which, name) => {

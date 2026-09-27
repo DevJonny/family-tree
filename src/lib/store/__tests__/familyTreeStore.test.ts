@@ -183,7 +183,7 @@ test("updateIndividualName rebuilds the exported NAME value instead of writing b
 
 test("removeIndividual drops their CHIL sub-records so a reused id can't inherit them", () => {
   useFamilyTreeStore.getState().loadFromGedcomText(
-    "0 HEAD\n0 @I1@ INDI\n1 FAMC @F1@\n0 @F1@ FAM\n1 CHIL @I1@\n2 _FREL Adopted\n0 TRLR\n",
+    "0 HEAD\n0 @I1@ INDI\n1 FAMC @F1@\n0 @I2@ INDI\n1 FAMS @F1@\n0 @F1@ FAM\n1 HUSB @I2@\n1 CHIL @I1@\n2 _FREL Adopted\n0 TRLR\n",
     "t.ged",
   );
   useFamilyTreeStore.getState().removeIndividual("@I1@");
@@ -261,4 +261,22 @@ test("updateFamily is a safe no-op for an id that doesn't exist", () => {
   });
   assert.deepEqual(useFamilyTreeStore.getState().tree.families, {});
   assert.equal(useFamilyTreeStore.getState().canUndo, false);
+});
+
+test("removeIndividual also deletes a family they leave empty, and undo brings both back", () => {
+  reset();
+  const childId = useFamilyTreeStore.getState().addIndividual();
+  const fatherId = useFamilyTreeStore.getState().addParent(childId, "father");
+  const famId = useFamilyTreeStore.getState().tree.individuals[childId].familyAsChild[0];
+
+  useFamilyTreeStore.getState().removeIndividual(childId);
+  // The father is still in the family, so it stays.
+  assert.ok(useFamilyTreeStore.getState().tree.families[famId]);
+  useFamilyTreeStore.getState().removeIndividual(fatherId);
+  assert.equal(useFamilyTreeStore.getState().tree.families[famId], undefined);
+
+  useFamilyTreeStore.getState().undo();
+  const tree = useFamilyTreeStore.getState().tree;
+  assert.equal(tree.families[famId].husband, fatherId);
+  assert.deepEqual(tree.individuals[fatherId].familyAsSpouse, [famId]);
 });

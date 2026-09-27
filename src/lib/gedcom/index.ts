@@ -7,6 +7,8 @@ export * from "./walk";
 export * from "./citations";
 export * from "./sourceUsage";
 export * from "./eventTags";
+export * from "./dates";
+export * from "./membership";
 
 import { parseGedcom } from "./parse";
 import { serializeGedcom } from "./serialize";

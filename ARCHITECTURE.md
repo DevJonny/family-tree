@@ -45,7 +45,7 @@ Google Drive is the sync backend, and every edit is undoable/redoable.
   coordinates and `Individual.sexAttached` for a citation on SEX, both
   tied to the value they came with; `RepositoryRef.callNumberExtra` for
   CALN's MEDI; `familyAsChildExtra`/`familyAsSpouseExtra` for FAMC/FAMS
-  children like `PEDI adopted`; `Family.memberExtra` for HUSB/WIFE/CHIL
+  children like a NOTE or STAT; `Family.memberExtra` for HUSB/WIFE/CHIL
   children like Ancestry's `_FREL`/`_MREL`). Importing a file from
   Ancestry/FamilySearch/Gramps and re-exporting loses nothing — unmodeled
   data just round-trips read-only until we model that tag.
@@ -69,6 +69,11 @@ Google Drive is the sync backend, and every edit is undoable/redoable.
     Paris drops London's coordinates rather than moving them to Paris, and
     undoing the change brings them back. CALN's MEDI is the exception: it
     describes the item held, so it survives a corrected call number.
+  - A lone, plain `PEDI` under FAMC is lifted into
+    `Individual.pedigree` (keyed by family id) so it can be edited. One
+    with sub-records (GEDCOM 7's PHRASE), or two under one link, stay
+    verbatim, and `pedigreeOf` then reports it as not editable, so the
+    link never gets a second PEDI.
   - CONC wrapping only splits between two non-space characters (and never
     inside a surrogate pair); the parser keeps a line's trailing space when
     the next line is a CONC. Previously ~1 in 6 wrap points in long notes
@@ -483,8 +488,13 @@ silently drops the `_next/` asset directory (leading underscore).
         marriage, other family events (`FAMILY_EVENT_TAGS`), notes and
         citations, members read-only; `updateFamily`; Sources "Cited by"
         opens the family.
-  - [ ] Membership logic (`membership.ts`, PEDI lift, `dateSortKey`,
-        empty-family cleanup in `removeIndividual`).
+  - [x] Membership logic (`src/lib/gedcom/membership.ts`: `addChild`,
+        `addSpouse`, `newFamily`, `removeFromFamily`, `deleteIndividual`,
+        `familyContents`, `pedigreeOf`/`setPedigree`; `dates.ts`'s
+        `dateSortKey`). A family counts as empty only when no one is in it
+        *and* no one links to it from their side, so a half-recorded link
+        in an imported file never loses it. The store's `removeIndividual`
+        now uses `deleteIndividual`.
   - [ ] Membership UI (person picker, add/remove spouse and child, new
         family, Parents section, empty-family warning).
 - [x] Phase 5 — History panel (`src/components/HistoryPanel.tsx`):
