@@ -26,15 +26,37 @@ export const INDIVIDUAL_EVENT_TAGS: { tag: string; label: string }[] = [
   { tag: "FACT", label: "Other fact" },
 ];
 
-/** Tags the model gives their own slot (birth, death, marriage), so they aren't in the "add" picker. */
+/**
+ * The GEDCOM 5.5.1 family events, for the family editor's "add event"
+ * picker. MARR isn't here because the first marriage has its own block
+ * (`Family.marriage`), like birth and death on a person.
+ */
+export const FAMILY_EVENT_TAGS: { tag: string; label: string }[] = [
+  { tag: "ENGA", label: "Engagement" },
+  { tag: "MARB", label: "Marriage banns" },
+  { tag: "MARC", label: "Marriage contract" },
+  { tag: "MARL", label: "Marriage license" },
+  { tag: "MARS", label: "Marriage settlement" },
+  { tag: "DIVF", label: "Divorce filed" },
+  { tag: "DIV", label: "Divorce" },
+  { tag: "ANUL", label: "Annulment" },
+  { tag: "CENS", label: "Census" },
+  { tag: "RESI", label: "Residence" },
+  { tag: "EVEN", label: "Other event" },
+];
+
+/** Tags the model gives their own slot (birth, death, marriage), so they aren't in either picker. */
 const OTHER_LABELS: Record<string, string> = {
   BIRT: "Birth",
   DEAT: "Death",
   MARR: "Marriage",
-  DIV: "Divorce",
-  ENGA: "Engagement",
 };
 
 export function labelForEventTag(tag: string): string {
-  return INDIVIDUAL_EVENT_TAGS.find((e) => e.tag === tag)?.label ?? OTHER_LABELS[tag] ?? tag;
+  return (
+    INDIVIDUAL_EVENT_TAGS.find((e) => e.tag === tag)?.label ??
+    FAMILY_EVENT_TAGS.find((e) => e.tag === tag)?.label ??
+    OTHER_LABELS[tag] ??
+    tag
+  );
 }

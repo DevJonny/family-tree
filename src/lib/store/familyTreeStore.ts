@@ -66,6 +66,12 @@ interface FamilyTreeState {
    */
   updateIndividual: (id: string, recipe: (draft: Draft<Individual>) => void, label?: string) => void;
   /**
+   * The same escape hatch for one family's own facts (marriage, events,
+   * notes, citations). Membership changes touch the people too, so they go
+   * through `updateTree` with the helpers in `gedcom/membership.ts`.
+   */
+  updateFamily: (id: string, recipe: (draft: Draft<Family>) => void, label?: string) => void;
+  /**
    * The tree-wide counterpart of `updateIndividual`, for edits that aren't
    * about one person: sources, repositories, shared notes, or a change that
    * spans several records (e.g. deleting a source and all its citations).
@@ -176,6 +182,14 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
         const indi = draft.individuals[id];
         if (!indi) return;
         recipe(indi);
+      }, label);
+    },
+
+    updateFamily: (id, recipe, label = "Edit family") => {
+      historyEngine.apply((draft) => {
+        const fam = draft.families[id];
+        if (!fam) return;
+        recipe(fam);
       }, label);
     },
 

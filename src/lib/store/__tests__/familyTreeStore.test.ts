@@ -228,3 +228,37 @@ test("loadTree can load a tree that isn't saved anywhere, like restored unsaved 
   assert.equal(useFamilyTreeStore.getState().dirty, true);
   assert.equal(useFamilyTreeStore.getState().canUndo, false);
 });
+
+test("updateFamily applies a recipe to one family as one labelled, undoable edit", () => {
+  reset();
+  const childId = useFamilyTreeStore.getState().addIndividual();
+  useFamilyTreeStore.getState().addParent(childId, "father");
+  const famId = useFamilyTreeStore.getState().tree.individuals[childId].familyAsChild[0];
+
+  useFamilyTreeStore.getState().updateFamily(
+    famId,
+    (draft) => {
+      draft.marriage = { tag: "MARR", date: "1 JUN 1900" };
+      draft.events.push({ tag: "DIV", date: "1910" });
+    },
+    "Edit marriage",
+  );
+
+  const state = useFamilyTreeStore.getState();
+  assert.equal(state.tree.families[famId].marriage?.date, "1 JUN 1900");
+  assert.equal(state.tree.families[famId].events[0].tag, "DIV");
+  assert.equal(state.history.undoStack.at(-1)?.label, "Edit marriage");
+
+  state.undo();
+  assert.equal(useFamilyTreeStore.getState().tree.families[famId].marriage, undefined);
+  assert.deepEqual(useFamilyTreeStore.getState().tree.families[famId].events, []);
+});
+
+test("updateFamily is a safe no-op for an id that doesn't exist", () => {
+  reset();
+  useFamilyTreeStore.getState().updateFamily("@F999@", (draft) => {
+    draft.events.push({ tag: "DIV" });
+  });
+  assert.deepEqual(useFamilyTreeStore.getState().tree.families, {});
+  assert.equal(useFamilyTreeStore.getState().canUndo, false);
+});

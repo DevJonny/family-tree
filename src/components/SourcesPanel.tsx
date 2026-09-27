@@ -40,7 +40,8 @@ export function SourcesPanel({
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   /** Show a person's Details (from "Cited by"). */
-  onOpenPerson: (id: string) => void;
+  /** Opens someone's Details, scrolled to `familyId` when it's a family that cites the source. */
+  onOpenPerson: (id: string, familyId?: string) => void;
 }) {
   const tree = useFamilyTreeStore((s) => s.tree);
   const updateTree = useFamilyTreeStore((s) => s.updateTree);
@@ -132,7 +133,8 @@ function SourceEditor({
 }: {
   source: Source;
   onDeleted: () => void;
-  onOpenPerson: (id: string) => void;
+  /** Opens someone's Details, scrolled to `familyId` when it's a family that cites the source. */
+  onOpenPerson: (id: string, familyId?: string) => void;
   onOpenSource: (id: string) => void;
 }) {
   const tree = useFamilyTreeStore((s) => s.tree);
@@ -157,8 +159,8 @@ function SourceEditor({
     if (owner.kind === "person") onOpenPerson(owner.ownerId);
     else if (owner.kind === "family") {
       const fam = tree.families[owner.ownerId];
-      const person = fam.husband ?? fam.wife;
-      if (person) onOpenPerson(person);
+      const person = fam.husband ?? fam.wife ?? fam.children[0];
+      if (person) onOpenPerson(person, owner.ownerId);
     } else if (owner.kind === "source") onOpenSource(owner.ownerId);
   };
 
@@ -242,7 +244,6 @@ function SourceEditor({
               ) : (
                 <button
                   onClick={() => openOwner(owner)}
-                  title={owner.kind === "family" ? "Family facts aren't editable yet; opens a spouse" : undefined}
                   className="text-left text-blue-600 hover:underline"
                 >
                   {owner.label}

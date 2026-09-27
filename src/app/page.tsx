@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import { PedigreeChart } from "@/components/PedigreeChart";
 import { HistoryPanel } from "@/components/HistoryPanel";
@@ -88,6 +88,16 @@ export default function Home() {
     undo,
     redo,
   } = useFamilyTreeStore();
+
+  // A family to scroll to in the next Details view (Sources "Cited by", a
+  // spouse or child link). Cleared once shown, so it only happens once.
+  const [focusFamilyId, setFocusFamilyId] = useState<string | null>(null);
+  const clearFocus = useCallback(() => setFocusFamilyId(null), []);
+  const openPerson = (id: string, familyId?: string) => {
+    selectIndividual(id);
+    setFocusFamilyId(familyId ?? null);
+    setActiveTab("details");
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const individuals = Object.values(tree.individuals);
@@ -197,10 +207,7 @@ export default function Home() {
                 indi={indi}
                 selected={selectedId === indi.id}
                 onSelect={() => selectIndividual(indi.id)}
-                onEdit={() => {
-                  selectIndividual(indi.id);
-                  setActiveTab("details");
-                }}
+                onEdit={() => openPerson(indi.id)}
                 onRemove={() => removeIndividual(indi.id)}
               />
             ))}
@@ -232,15 +239,18 @@ export default function Home() {
               <SourcesPanel
                 selectedId={selectedSourceId}
                 onSelect={setSelectedSourceId}
-                onOpenPerson={(id) => {
-                  selectIndividual(id);
-                  setActiveTab("details");
-                }}
+                onOpenPerson={openPerson}
               />
             ) : activeTab === "pedigree" || !selectedId ? (
               <PedigreeChart rootId={selectedId} />
             ) : (
-              <PersonDetailPanel key={selectedId} id={selectedId} />
+              <PersonDetailPanel
+                key={selectedId}
+                id={selectedId}
+                onOpenPerson={openPerson}
+                focusFamilyId={focusFamilyId}
+                onFocusHandled={clearFocus}
+              />
             )}
           </div>
 

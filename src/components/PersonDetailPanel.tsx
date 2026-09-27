@@ -5,10 +5,11 @@ import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import { INDIVIDUAL_EVENT_TAGS, labelForEventTag } from "@/lib/gedcom/eventTags";
 import { TextField } from "@/components/fields";
 import type { Draft } from "immer";
-import { applyNamePatch, type EventFact, type FamilyTree, type NameParts, type Sex } from "@/lib/gedcom/model";
-import type { Citation, Note } from "@/lib/gedcom/sources";
+import { applyNamePatch, type FamilyTree, type NameParts, type Sex } from "@/lib/gedcom/model";
 import { CitationList } from "@/components/CitationList";
 import { NoteList } from "@/components/NoteRow";
+import { EventFields, FactSources, otherEventLabel, SECTION_HEADING, SlotFact } from "@/components/facts";
+import { FamiliesSection } from "@/components/FamilySections";
 
 const SEX_OPTIONS: { value: Sex | ""; label: string }[] = [
   { value: "", label: "Unknown" },
@@ -17,27 +18,6 @@ const SEX_OPTIONS: { value: Sex | ""; label: string }[] = [
   { value: "X", label: "Other" },
   { value: "U", label: "Unrecorded" },
 ];
-
-function EventFields({
-  event,
-  onChange,
-  onRemove,
-}: {
-  event: EventFact;
-  onChange: (patch: Partial<EventFact>) => void;
-  onRemove: () => void;
-}) {
-  return (
-    <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2">
-      <TextField label="Value" value={event.value ?? ""} onChange={(v) => onChange({ value: v || undefined })} />
-      <TextField label="Date" value={event.date ?? ""} onChange={(v) => onChange({ date: v || undefined })} />
-      <TextField label="Place" value={event.place ?? ""} onChange={(v) => onChange({ place: v || undefined })} />
-      <button onClick={onRemove} className="pb-1 text-xs text-red-500 hover:text-red-700">
-        Remove
-      </button>
-    </div>
-  );
-}
 
 function NameFields({
   name,
@@ -60,40 +40,19 @@ function NameFields({
   );
 }
 
-/**
- * The citations and notes under one fact or name, indented so it's clear
- * which fact they belong to.
- */
-function FactSources({
-  ownerId,
-  what,
-  citations,
-  locateCitations,
-  notes,
-  locateNotes,
+export function PersonDetailPanel({
+  id,
+  onOpenPerson,
+  focusFamilyId,
+  onFocusHandled,
 }: {
-  ownerId: string;
-  what: string;
-  citations: Citation[] | undefined;
-  locateCitations: (d: Draft<FamilyTree>) => Citation[];
-  notes?: Note[];
-  locateNotes?: (d: Draft<FamilyTree>) => Note[];
+  id: string;
+  /** Opens someone's Details, optionally scrolled to one of their families. */
+  onOpenPerson: (id: string, familyId?: string) => void;
+  /** A family to scroll to and highlight once, e.g. from Sources "Cited by". */
+  focusFamilyId?: string | null;
+  onFocusHandled?: () => void;
 }) {
-  return (
-    <div className="ml-1 space-y-1 border-l-2 border-neutral-100 pl-2">
-      <CitationList citations={citations} locate={locateCitations} ownerId={ownerId} what={what} />
-      {locateNotes && <NoteList notes={notes} locate={locateNotes} ownerId={ownerId} compact />}
-    </div>
-  );
-}
-
-/** An alternate BIRT/DEAT (a second one, common in Ancestry exports) reads better with a prefix. */
-function otherEventLabel(tag: string): string {
-  const label = labelForEventTag(tag);
-  return tag === "BIRT" || tag === "DEAT" ? `Alternate ${label.toLowerCase()}` : label;
-}
-
-export function PersonDetailPanel({ id }: { id: string }) {
   const tree = useFamilyTreeStore((s) => s.tree);
   const updateIndividual = useFamilyTreeStore((s) => s.updateIndividual);
   const [newEventTag, setNewEventTag] = useState(INDIVIDUAL_EVENT_TAGS[0].tag);
@@ -105,7 +64,7 @@ export function PersonDetailPanel({ id }: { id: string }) {
   return (
     <div className="space-y-5 p-4 text-sm">
       <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Names</h3>
+        <h3 className={SECTION_HEADING}>Names</h3>
         {individual.names.map((name, i) => (
           <div key={i} className="space-y-1">
             <NameFields
@@ -158,80 +117,28 @@ export function PersonDetailPanel({ id }: { id: string }) {
         </label>
       </section>
 
-      <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Birth</h3>
-        <div className="grid grid-cols-2 gap-2">
-          <TextField
-            label="Date"
-            value={individual.birth?.date ?? ""}
-            onChange={(v) =>
-              updateIndividual(
-                id,
-                (d) => void (d.birth = { tag: "BIRT", ...d.birth, date: v || undefined }),
-                "Edit birth date",
-              )
-            }
-          />
-          <TextField
-            label="Place"
-            value={individual.birth?.place ?? ""}
-            onChange={(v) =>
-              updateIndividual(
-                id,
-                (d) => void (d.birth = { tag: "BIRT", ...d.birth, place: v || undefined }),
-                "Edit birth place",
-              )
-            }
-          />
-        </div>
-        <FactSources
-          ownerId={id}
-          what="birth"
-          citations={individual.birth?.citations}
-          locateCitations={(d) => ((person(d).birth ??= { tag: "BIRT" }).citations ??= [])}
-          notes={individual.birth?.notes}
-          locateNotes={(d) => ((person(d).birth ??= { tag: "BIRT" }).notes ??= [])}
-        />
-      </section>
+      <SlotFact
+        title="Birth"
+        fact={individual.birth}
+        ownerId={id}
+        onChange={(patch, label) =>
+          updateIndividual(id, (d) => void Object.assign((d.birth ??= { tag: "BIRT" }), patch), label)
+        }
+        locate={(d) => (person(d).birth ??= { tag: "BIRT" })}
+      />
+
+      <SlotFact
+        title="Death"
+        fact={individual.death}
+        ownerId={id}
+        onChange={(patch, label) =>
+          updateIndividual(id, (d) => void Object.assign((d.death ??= { tag: "DEAT" }), patch), label)
+        }
+        locate={(d) => (person(d).death ??= { tag: "DEAT" })}
+      />
 
       <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Death</h3>
-        <div className="grid grid-cols-2 gap-2">
-          <TextField
-            label="Date"
-            value={individual.death?.date ?? ""}
-            onChange={(v) =>
-              updateIndividual(
-                id,
-                (d) => void (d.death = { tag: "DEAT", ...d.death, date: v || undefined }),
-                "Edit death date",
-              )
-            }
-          />
-          <TextField
-            label="Place"
-            value={individual.death?.place ?? ""}
-            onChange={(v) =>
-              updateIndividual(
-                id,
-                (d) => void (d.death = { tag: "DEAT", ...d.death, place: v || undefined }),
-                "Edit death place",
-              )
-            }
-          />
-        </div>
-        <FactSources
-          ownerId={id}
-          what="death"
-          citations={individual.death?.citations}
-          locateCitations={(d) => ((person(d).death ??= { tag: "DEAT" }).citations ??= [])}
-          notes={individual.death?.notes}
-          locateNotes={(d) => ((person(d).death ??= { tag: "DEAT" }).notes ??= [])}
-        />
-      </section>
-
-      <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Other events</h3>
+        <h3 className={SECTION_HEADING}>Other events</h3>
         {individual.events.map((event, i) => (
           <div key={i} className="space-y-1">
             <div className="text-xs font-medium text-neutral-600">{otherEventLabel(event.tag)}</div>
@@ -282,12 +189,12 @@ export function PersonDetailPanel({ id }: { id: string }) {
       </section>
 
       <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Notes</h3>
+        <h3 className={SECTION_HEADING}>Notes</h3>
         <NoteList notes={individual.notes} locate={(d) => person(d).notes} ownerId={id} />
       </section>
 
       <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Other citations</h3>
+        <h3 className={SECTION_HEADING}>Other citations</h3>
         <p className="text-xs text-neutral-400">Sources for this person as a whole rather than one fact.</p>
         <CitationList
           citations={individual.citations}
@@ -296,6 +203,13 @@ export function PersonDetailPanel({ id }: { id: string }) {
           what="person"
         />
       </section>
+
+      <FamiliesSection
+        personId={id}
+        onOpenPerson={onOpenPerson}
+        focusFamilyId={focusFamilyId}
+        onFocusHandled={onFocusHandled}
+      />
     </div>
   );
 }

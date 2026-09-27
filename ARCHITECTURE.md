@@ -118,9 +118,9 @@ under an inline note, and a copied UID would clash.
 its list inside a draft tree, so every edit is one `updateTree` call
 wherever the list lives. The Sources tab (`SourcesPanel.tsx`, 4b.4) has
 the list, the source editor with repositories inline, "Cited by" (people
-open their Details; a family opens its husband, else wife), and deletes
-behind an in-page warning. Not shown yet: citations on a person's inline notes
-(still modelled and round-tripped), and anything on families (no family editor).
+open their Details; a family opens a member's Details scrolled to that
+family), and deletes behind an in-page warning. Not shown yet: citations
+on a person's inline notes (still modelled and round-tripped).
 Still verbatim: NOTE under NAME, and citation EVEN/ROLE/OBJE.
 
 #### Phase 4b design — sources, citations, repositories, shared notes
@@ -207,6 +207,61 @@ gitignored `data/private/` when present. Failures there report only tag
 paths and counts, never values, so real people's data doesn't get printed.
 Each quirk found gets a fictional reproduction in `sample-extended.ged`.
 
+#### Family editor design
+
+Agreed with the user before coding. It covers family facts (marriage,
+other family events, notes, citations) *and* membership (spouses,
+children, a child's relationship to the family).
+
+**Placement.** No new tab and no "selected family" state. A person's
+Details gains two sections:
+- **Parents:** one block per FAMC, listing the parents as links, this
+  child's relationship dropdown and "Remove from family". It expands to
+  the full family editor, so a family with children but no parents can
+  still be reached. "+ Add to parents' family" searches for a parent and
+  offers their families, or creates a new one.
+- **Families:** one block per FAMS, headed "With <spouse>" (or "With
+  (unknown spouse)"). It holds marriage (a fixed block like Birth),
+  other family events (their own picker: ENGA, MARB, MARC, MARL, MARS,
+  DIV, DIVF, ANUL, CENS, RESI, EVEN), notes, family citations, the
+  spouse, and children as links with "+ Add child". "+ Add spouse" fills
+  an empty slot, and "+ Add family" starts a new partnership.
+  The same family shows under both spouses, since it's the same data.
+  Sources "Cited by" opens a member's Details scrolled to that family.
+
+**Adding people.** A name search like "+ cite", whose last option is "New
+person “…”" (last word becomes the surname). It excludes the person
+themselves and anyone already in that family. There's no ancestry-cycle
+check (the pedigree is depth-limited). In a new family, the person takes
+WIFE if female, else HUSB, and the partner takes the other slot. Adding a
+spouse fills whichever slot is empty. Sex isn't enforced.
+
+**Removing people** only unlinks them. A family left with nobody in it
+is deleted in the same undo step, because nothing in the UI could reach
+it any more. If it holds facts, notes or citations, an in-page warning
+first says what goes with it. Deleting a person (✕ in the list) follows
+the same rule, silently, and undo restores both.
+
+**Child relationship.** `PEDI` under FAMC (birth/adopted/foster/sealed)
+is lifted into a typed field and edited with one dropdown per child.
+Ancestry's per-parent `_FREL`/`_MREL` under CHIL are shown next to it
+read-only and round-trip untouched.
+
+**Child order.** File order is kept. A new child is inserted in
+birth-date order where the dates compare (`dateSortKey`, which ignores
+ABT/BEF/AFT/EST/CAL and takes the first date of a range), otherwise
+appended. There's no manual reordering.
+
+**Store and logic.** `updateFamily(id, recipe, label)` mirrors
+`updateIndividual` for fact edits. Membership changes touch both sides
+of a link (FAMS/FAMC on the person, HUSB/WIFE/CHIL on the family, and
+each side's link sub-records), so they're pure helpers in
+`src/lib/gedcom/membership.ts`, unit-tested, and each UI action is one
+`updateTree` call.
+
+**Delivery**, in three slices: (1) family facts, with members shown
+read-only; (2) the membership logic, test-first; (3) the membership UI.
+
 ### 2. Undo/redo — `src/lib/history/`
 
 Generic `History<T>` class, decoupled from the family-tree domain (tested
@@ -280,7 +335,11 @@ which hold a local draft and only call the store once, on blur or Enter —
 resyncing from the incoming value during render (not an effect) if it
 changes for another reason, like switching the selected person or an
 undo/redo. Any new text input should use one of these rather than wiring
-a raw `<input onChange>` straight to the store.
+a raw `<input onChange>` straight to the store. Enter only blurs, and the
+blur commits: Enter used to commit and then blur, which committed a second
+time before the new value rendered, so a recipe that assigns a fresh
+object (`d.birth = {...}`) recorded two "Edit birth date" entries. Recipes
+patch facts in place (`Object.assign`) too, so a repeated commit is a no-op.
 
 ### 4. Google Drive sync — `src/lib/drive/` + `src/lib/store/driveSyncStore.ts`
 
@@ -417,8 +476,17 @@ silently drops the `_next/` asset directory (leading underscore).
         `sourceUsage.ts`): list, source/repository editor, Cited by,
         delete with cascade warning.
 - [ ] Phase 4c — Media (OBJE): attachments stored in Drive.
-- [ ] Family editor — marriage/divorce and other family events, family
-      notes and citations (modelled in 4b, but not yet editable in the UI).
+- [ ] Family editor (design: "Family editor design" above), in three
+      slices:
+  - [x] Family facts: a Families section in Details
+        (`src/components/FamilySections.tsx`), one block per FAMS with
+        marriage, other family events (`FAMILY_EVENT_TAGS`), notes and
+        citations, members read-only; `updateFamily`; Sources "Cited by"
+        opens the family.
+  - [ ] Membership logic (`membership.ts`, PEDI lift, `dateSortKey`,
+        empty-family cleanup in `removeIndividual`).
+  - [ ] Membership UI (person picker, add/remove spouse and child, new
+        family, Parents section, empty-family warning).
 - [x] Phase 5 — History panel (`src/components/HistoryPanel.tsx`):
       shows every edit chronologically with a "current" marker; clicking
       any past or future entry jumps straight there via the store's
