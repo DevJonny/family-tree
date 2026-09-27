@@ -9,6 +9,7 @@ export * from "./sourceUsage";
 export * from "./eventTags";
 export * from "./dates";
 export * from "./membership";
+export * from "./people";
 
 import { parseGedcom } from "./parse";
 import { serializeGedcom } from "./serialize";

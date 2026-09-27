@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { Draft } from "immer";
 import { History } from "../history/historyStore";
 import { deleteIndividual } from "../gedcom/membership";
+import { addPerson } from "../gedcom/people";
 import type { HistorySnapshot } from "../history/types";
 import {
   applyNamePatch,
@@ -151,19 +152,9 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
     selectIndividual: (id) => set({ selectedId: id }),
 
     addIndividual: (name) => {
-      const id = nextFreeId(get().tree, "I");
+      let id = "";
       historyEngine.apply((draft) => {
-        const indi: Individual = {
-          id,
-          names: name ? [name] : [{ given: "New", surname: "Person" }],
-          events: [],
-          familyAsChild: [],
-          familyAsSpouse: [],
-          notes: [],
-          citations: [],
-          extra: [],
-        };
-        draft.individuals[id] = indi;
+        id = addPerson(draft, name ?? { given: "New", surname: "Person" });
       }, "Add individual");
       return id;
     },

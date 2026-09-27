@@ -1,4 +1,4 @@
-import type { Draft } from "immer";
+import { produce, type Draft } from "immer";
 import { dateSortKey } from "./dates";
 import { labelForEventTag } from "./eventTags";
 import { walkTree } from "./walk";
@@ -185,4 +185,10 @@ export function setPedigree(tree: Tree, childId: string, famId: string, value: s
   if (!child || !pedigreeOf(child, famId).editable) return;
   if (value) (child.pedigree ??= {})[famId] = value;
   else if (child.pedigree) delete child.pedigree[famId];
+}
+
+/** Whether `removeFromFamily` would delete the family, so the UI can warn first. */
+export function removalDeletesFamily(tree: FamilyTree, famId: string, personId: string): boolean {
+  if (!tree.families[famId]) return false;
+  return !produce(tree, (d) => removeFromFamily(d, famId, personId)).families[famId];
 }

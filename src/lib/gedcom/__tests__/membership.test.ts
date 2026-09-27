@@ -9,6 +9,7 @@ import {
   familyContents,
   newFamily,
   pedigreeOf,
+  removalDeletesFamily,
   removeFromFamily,
   setPedigree,
 } from "../membership";
@@ -241,6 +242,12 @@ test("a family someone still links to from their own side isn't deleted", () => 
   // @I4@ lists @F2@ as a spouse family, though @F2@ doesn't list them back.
   const tree = produce(load(`${LINKED}\n0 @I4@ INDI\n1 FAMS @F2@`), (d) => removeFromFamily(d, "@F2@", "@I3@"));
   assert.ok(tree.families["@F2@"]);
+});
+
+test("removalDeletesFamily says whether taking someone out would leave the family empty", () => {
+  const tree = load(LINKED);
+  assert.equal(removalDeletesFamily(tree, "@F2@", "@I3@"), true);
+  assert.equal(removalDeletesFamily(tree, "@F1@", "@I3@"), false);
 });
 
 test("familyContents lists what deleting a family would take with it, for a warning", () => {

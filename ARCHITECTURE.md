@@ -223,8 +223,9 @@ Details gains two sections:
 - **Parents:** one block per FAMC, listing the parents as links, this
   child's relationship dropdown and "Remove from family". It expands to
   the full family editor, so a family with children but no parents can
-  still be reached. "+ Add to parents' family" searches for a parent and
-  offers their families, or creates a new one.
+  still be reached. "+ Add parents" searches for a parent (or creates
+  one), then offers that parent's families to join as a child, or a new
+  family with just them.
 - **Families:** one block per FAMS, headed "With <spouse>" (or "With
   (unknown spouse)"). It holds marriage (a fixed block like Birth),
   other family events (their own picker: ENGA, MARB, MARC, MARL, MARS,
@@ -234,9 +235,13 @@ Details gains two sections:
   The same family shows under both spouses, since it's the same data.
   Sources "Cited by" opens a member's Details scrolled to that family.
 
-**Adding people.** A name search like "+ cite", whose last option is "New
-person “…”" (last word becomes the surname). It excludes the person
-themselves and anyone already in that family. There's no ancestry-cycle
+**Adding people.** A name search like "+ cite" (`PersonPicker`, over
+every name a person has, with their years to tell namesakes apart), whose
+last option is "New person “…”" (last word becomes the surname). Enter
+picks the one person whose whole name was typed, else creates a new
+person; with two people of that name it waits for an arrow-key choice
+rather than guess. It excludes the person themselves and anyone already
+in that family. There's no ancestry-cycle
 check (the pedigree is depth-limited). In a new family, the person takes
 WIFE if female, else HUSB, and the partner takes the other slot. Adding a
 spouse fills whichever slot is empty. Sex isn't enforced.
@@ -481,7 +486,7 @@ silently drops the `_next/` asset directory (leading underscore).
         `sourceUsage.ts`): list, source/repository editor, Cited by,
         delete with cascade warning.
 - [ ] Phase 4c — Media (OBJE): attachments stored in Drive.
-- [ ] Family editor (design: "Family editor design" above), in three
+- [x] Family editor (design: "Family editor design" above), in three
       slices:
   - [x] Family facts: a Families section in Details
         (`src/components/FamilySections.tsx`), one block per FAMS with
@@ -495,8 +500,12 @@ silently drops the `_next/` asset directory (leading underscore).
         *and* no one links to it from their side, so a half-recorded link
         in an imported file never loses it. The store's `removeIndividual`
         now uses `deleteIndividual`.
-  - [ ] Membership UI (person picker, add/remove spouse and child, new
-        family, Parents section, empty-family warning).
+  - [x] Membership UI: `PersonPicker`, Parents and Families sections
+        (`FamilySections.tsx`) with add/remove for partners, parents and
+        children, "+ Add family", "+ Add parents", the relationship
+        dropdown, and the empty-family warning. Pure helpers in
+        `gedcom/people.ts` (`searchPeople`, `exactPersonMatches`,
+        `lifeSpan`, `nameFromTyped`, `addPerson`).
 - [x] Phase 5 — History panel (`src/components/HistoryPanel.tsx`):
       shows every edit chronologically with a "current" marker; clicking
       any past or future entry jumps straight there via the store's

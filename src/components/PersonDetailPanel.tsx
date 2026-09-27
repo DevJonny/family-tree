@@ -9,7 +9,7 @@ import { applyNamePatch, type FamilyTree, type NameParts, type Sex } from "@/lib
 import { CitationList } from "@/components/CitationList";
 import { NoteList } from "@/components/NoteRow";
 import { EventFields, FactSources, otherEventLabel, SECTION_HEADING, SlotFact } from "@/components/facts";
-import { FamiliesSection } from "@/components/FamilySections";
+import { FamiliesSection, ParentsSection } from "@/components/FamilySections";
 
 const SEX_OPTIONS: { value: Sex | ""; label: string }[] = [
   { value: "", label: "Unknown" },
@@ -203,6 +203,13 @@ export function PersonDetailPanel({
           what="person"
         />
       </section>
+
+      <ParentsSection
+        personId={id}
+        onOpenPerson={onOpenPerson}
+        focusFamilyId={focusFamilyId}
+        onFocusHandled={onFocusHandled}
+      />
 
       <FamiliesSection
         personId={id}
