@@ -9,6 +9,7 @@ import {
   addChild,
   addSpouse,
   familyContents,
+  joinableFamilies,
   newFamily,
   pedigreeOf,
   removalDeletesFamily,
@@ -320,16 +321,18 @@ function FamilyMembers({
   );
 }
 
-/** Scrolls to and highlights the block for `famId` when it's the one asked for. */
-function useFocusedBlock(famId: string, focusFamilyId: string | null | undefined, onFocusHandled?: () => void) {
+/**
+ * Scrolls to and highlights the block for `famId` when it's the one asked
+ * for. PersonDetailPanel clears the request afterwards, whether or not a
+ * block showed it.
+ */
+function useFocusedBlock(famId: string, focusFamilyId: string | null | undefined) {
   const ref = useRef<HTMLDivElement>(null);
   const focused = focusFamilyId === famId;
   useEffect(() => {
-    if (!focused) return;
     // Instant: smooth scrolling doesn't run in a hidden tab.
-    ref.current?.scrollIntoView({ block: "start" });
-    onFocusHandled?.();
-  }, [focused, onFocusHandled]);
+    if (focused) ref.current?.scrollIntoView({ block: "start" });
+  }, [focused]);
   // Stays highlighted until another family is focused or Details remounts.
   const [highlighted, setHighlighted] = useState(focused);
   const [prevFocus, setPrevFocus] = useState(focusFamilyId);
@@ -345,7 +348,6 @@ interface BlockProps {
   famId: string;
   onOpenPerson: OpenPerson;
   focusFamilyId?: string | null;
-  onFocusHandled?: () => void;
 }
 
 function blockClass(highlighted: boolean): string {
@@ -361,9 +363,9 @@ function MissingFamily({ famId }: { famId: string }) {
 }
 
 /** One family this person is a spouse/partner in (FAMS). */
-function SpouseFamilyBlock({ personId, famId, onOpenPerson, focusFamilyId, onFocusHandled }: BlockProps) {
+function SpouseFamilyBlock({ personId, famId, onOpenPerson, focusFamilyId }: BlockProps) {
   const family = useFamilyTreeStore((s) => s.tree.families[famId]);
-  const { ref, highlighted } = useFocusedBlock(famId, focusFamilyId, onFocusHandled);
+  const { ref, highlighted } = useFocusedBlock(famId, focusFamilyId);
   if (!family) return <MissingFamily famId={famId} />;
   const spouse = family.husband === personId ? family.wife : family.husband;
 
@@ -434,9 +436,9 @@ function PedigreeField({ childId, famId }: { childId: string; famId: string }) {
 }
 
 /** One family this person is a child in (FAMC): the parents, their relationship, and the family on demand. */
-function ParentsBlock({ personId, famId, onOpenPerson, focusFamilyId, onFocusHandled }: BlockProps) {
+function ParentsBlock({ personId, famId, onOpenPerson, focusFamilyId }: BlockProps) {
   const family = useFamilyTreeStore((s) => s.tree.families[famId]);
-  const { ref, focused, highlighted } = useFocusedBlock(famId, focusFamilyId, onFocusHandled);
+  const { ref, focused, highlighted } = useFocusedBlock(famId, focusFamilyId);
   const [expanded, setExpanded] = useState(focused);
   if (focused && !expanded) setExpanded(true);
   const { request, warning } = useRemoveMember(famId);
@@ -479,7 +481,6 @@ interface SectionProps {
   personId: string;
   onOpenPerson: OpenPerson;
   focusFamilyId?: string | null;
-  onFocusHandled?: () => void;
 }
 
 /**
@@ -490,7 +491,15 @@ function AddParents({ personId, onDone }: { personId: string; onDone: () => void
   const tree = useFamilyTreeStore((s) => s.tree);
   const updateTree = useFamilyTreeStore((s) => s.updateTree);
   const [parentId, setParentId] = useState<string | null>(null);
-  const exclude = useMemo(() => new Set([personId]), [personId]);
+  // Not themselves, nor their own spouses or children.
+  const exclude = useMemo(() => {
+    const person = tree.individuals[personId];
+    const own = (person?.familyAsSpouse ?? []).flatMap((f) => {
+      const fam = tree.families[f];
+      return fam ? [fam.husband, fam.wife, ...fam.children] : [];
+    });
+    return new Set([personId, ...own.filter((id) => id !== undefined)]);
+  }, [tree, personId]);
   const childName = nameOf(tree, personId);
 
   const joinNew = (parent: string) => {
@@ -508,11 +517,7 @@ function AddParents({ personId, onDone }: { personId: string; onDone: () => void
         exclude={exclude}
         placeholder="Search for a parent, or type a new parent's name…"
         onPick={(id) => {
-          // Their families (excluding any this person is already in) to choose from.
-          const families = tree.individuals[id].familyAsSpouse.filter(
-            (f) => tree.families[f] && !tree.families[f].children.includes(personId),
-          );
-          if (families.length === 0) joinNew(id);
+          if (joinableFamilies(tree, id, personId).length === 0) joinNew(id);
           else setParentId(id);
         }}
         onCreate={(typed) => {
@@ -528,9 +533,7 @@ function AddParents({ personId, onDone }: { personId: string; onDone: () => void
   }
 
   const parentName = nameOf(tree, parentId);
-  const families = tree.individuals[parentId].familyAsSpouse.filter(
-    (f) => tree.families[f] && !tree.families[f].children.includes(personId),
-  );
+  const families = joinableFamilies(tree, parentId, personId);
   return (
     <div className="space-y-1 rounded border border-blue-200 bg-blue-50/40 p-2 text-xs">
       <p className="text-neutral-600">Which of {parentName}&apos;s families is {childName} a child of?</p>
@@ -564,7 +567,7 @@ function AddParents({ personId, onDone }: { personId: string; onDone: () => void
 }
 
 /** "Parents": one block per family this person is a child in. */
-export function ParentsSection({ personId, onOpenPerson, focusFamilyId, onFocusHandled }: SectionProps) {
+export function ParentsSection({ personId, onOpenPerson, focusFamilyId }: SectionProps) {
   const familyIds = useFamilyTreeStore((s) => s.tree.individuals[personId]?.familyAsChild);
   const [adding, setAdding] = useState(false);
   if (!familyIds) return null;
@@ -580,7 +583,6 @@ export function ParentsSection({ personId, onOpenPerson, focusFamilyId, onFocusH
           famId={famId}
           onOpenPerson={onOpenPerson}
           focusFamilyId={focusFamilyId}
-          onFocusHandled={onFocusHandled}
         />
       ))}
       {adding ? (
@@ -595,7 +597,7 @@ export function ParentsSection({ personId, onOpenPerson, focusFamilyId, onFocusH
 }
 
 /** "Families": one block per family this person is a spouse/partner in, and "+ Add family". */
-export function FamiliesSection({ personId, onOpenPerson, focusFamilyId, onFocusHandled }: SectionProps) {
+export function FamiliesSection({ personId, onOpenPerson, focusFamilyId }: SectionProps) {
   const tree = useFamilyTreeStore((s) => s.tree);
   const updateTree = useFamilyTreeStore((s) => s.updateTree);
   const [adding, setAdding] = useState(false);
@@ -622,7 +624,6 @@ export function FamiliesSection({ personId, onOpenPerson, focusFamilyId, onFocus
           famId={famId}
           onOpenPerson={onOpenPerson}
           focusFamilyId={focusFamilyId}
-          onFocusHandled={onFocusHandled}
         />
       ))}
       {adding ? (

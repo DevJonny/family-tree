@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFamilyTreeStore } from "@/lib/store/familyTreeStore";
 import { INDIVIDUAL_EVENT_TAGS, labelForEventTag } from "@/lib/gedcom/eventTags";
 import { TextField } from "@/components/fields";
@@ -56,6 +56,12 @@ export function PersonDetailPanel({
   const tree = useFamilyTreeStore((s) => s.tree);
   const updateIndividual = useFamilyTreeStore((s) => s.updateIndividual);
   const [newEventTag, setNewEventTag] = useState(INDIVIDUAL_EVENT_TAGS[0].tag);
+  // A family asked to be shown is scrolled to by its block's effect, which
+  // runs before this one; clear the request either way, so a family with
+  // no block here (a link recorded on one side only) can't leave it set.
+  useEffect(() => {
+    if (focusFamilyId) onFocusHandled?.();
+  }, [focusFamilyId, onFocusHandled]);
 
   const individual = tree.individuals[id];
   if (!individual) return null;
@@ -208,14 +214,12 @@ export function PersonDetailPanel({
         personId={id}
         onOpenPerson={onOpenPerson}
         focusFamilyId={focusFamilyId}
-        onFocusHandled={onFocusHandled}
       />
 
       <FamiliesSection
         personId={id}
         onOpenPerson={onOpenPerson}
         focusFamilyId={focusFamilyId}
-        onFocusHandled={onFocusHandled}
       />
     </div>
   );

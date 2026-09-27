@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import type { Draft } from "immer";
 import { History } from "../history/historyStore";
-import { deleteIndividual } from "../gedcom/membership";
+import { addChild, addSpouse, deleteIndividual, newFamily } from "../gedcom/membership";
 import { addPerson } from "../gedcom/people";
 import type { HistorySnapshot } from "../history/types";
 import {
@@ -15,7 +15,6 @@ import {
   type Individual,
   type NameParts,
   loadGedcom,
-  nextFreeId,
   saveGedcom,
 } from "../gedcom";
 
@@ -196,45 +195,19 @@ export const useFamilyTreeStore = create<FamilyTreeState>((set, get) => {
     },
 
     addParent: (childId, which, name) => {
-      const { tree } = get();
-      const { individuals } = tree;
-      const parentId = nextFreeId(tree, "I");
-      // Reuse the child's existing "family as child" record if they have
-      // one (so we don't fork them into two separate families), otherwise
-      // mint a new FAM record to hold this parent link.
-      const existingFamId = individuals[childId]?.familyAsChild[0];
-      const famId = existingFamId ?? nextFreeId(tree, "F");
-
+      const slot = which === "father" ? "husband" : "wife";
+      let parentId = "";
       historyEngine.apply((draft) => {
-        const parent: Individual = {
-          id: parentId,
-          names: name ? [name] : [{ given: "New", surname: "Person" }],
-          events: [],
-          familyAsChild: [],
-          familyAsSpouse: [famId],
-          notes: [],
-          citations: [],
-          extra: [],
-        };
-        draft.individuals[parentId] = parent;
-
-        const family: Family = draft.families[famId] ?? {
-          id: famId,
-          children: [],
-          events: [],
-          notes: [],
-          citations: [],
-          extra: [],
-        };
-        if (which === "father") family.husband = parentId;
-        else family.wife = parentId;
-        if (!family.children.includes(childId)) family.children.push(childId);
-        draft.families[famId] = family;
-
-        const child = draft.individuals[childId];
-        if (child && !child.familyAsChild.includes(famId)) child.familyAsChild.push(famId);
+        parentId = addPerson(draft, name ?? { given: "New", surname: "Person" });
+        // Join the child's first parents' family if that parent's slot is
+        // free (so father then mother share one family), else start one.
+        const famId = draft.individuals[childId]?.familyAsChild[0];
+        const family = famId ? draft.families[famId] : undefined;
+        if (family && !family[slot]) {
+          addSpouse(draft, famId!, parentId, slot);
+          addChild(draft, famId!, childId); // completes a link found on the child's side only
+        } else addChild(draft, newFamily(draft, parentId, undefined, slot), childId);
       }, `Add ${which}`);
-
       return parentId;
     },
 

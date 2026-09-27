@@ -253,7 +253,8 @@ first says what goes with it. Deleting a person (✕ in the list) follows
 the same rule, silently, and undo restores both.
 
 **Child relationship.** `PEDI` under FAMC (birth/adopted/foster/sealed)
-is lifted into a typed field and edited with one dropdown per child.
+is lifted into a typed field and edited with one dropdown per child
+(written in capitals, BIRTH/ADOPTED/..., when the header says GEDCOM 7).
 Ancestry's per-parent `_FREL`/`_MREL` under CHIL are shown next to it
 read-only and round-trip untouched.
 
@@ -496,10 +497,14 @@ silently drops the `_next/` asset directory (leading underscore).
   - [x] Membership logic (`src/lib/gedcom/membership.ts`: `addChild`,
         `addSpouse`, `newFamily`, `removeFromFamily`, `deleteIndividual`,
         `familyContents`, `pedigreeOf`/`setPedigree`; `dates.ts`'s
-        `dateSortKey`). A family counts as empty only when no one is in it
+        `dateSortKey`; `walkFamily` in `walk.ts` for per-family counts). A family counts as empty only when no one is in it
         *and* no one links to it from their side, so a half-recorded link
         in an imported file never loses it. The store's `removeIndividual`
-        now uses `deleteIndividual`.
+        now uses `deleteIndividual`, and the pedigree chart's `addParent`
+        is built on `addPerson`/`addSpouse`/`newFamily` too (a parent
+        slot that's already taken now starts a new family rather than
+        overwriting it). New ids are read off `current(draft)`, since
+        `nextFreeId` exports the whole tree.
   - [x] Membership UI: `PersonPicker`, Parents and Families sections
         (`FamilySections.tsx`) with add/remove for partners, parents and
         children, "+ Add family", "+ Add parents", the relationship

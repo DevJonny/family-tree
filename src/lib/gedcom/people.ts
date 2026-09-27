@@ -1,5 +1,5 @@
 import { dateSortKey } from "./dates";
-import type { Draft } from "immer";
+import { current, isDraft, type Draft } from "immer";
 import { nextFreeId, personDisplayName, type FamilyTree, type Individual, type NameParts } from "./model";
 
 /** A name typed into a search box: the last word is the surname, the rest the given names. */
@@ -62,7 +62,9 @@ export function exactPersonMatches(people: Individual[], text: string): Individu
 
 /** Creates a person (inside a recipe, so it can share an undo step with linking them) and returns their id. */
 export function addPerson(tree: Draft<FamilyTree>, name: NameParts): string {
-  const id = nextFreeId(tree, "I");
+  // nextFreeId exports the whole tree; reading a plain snapshot rather than
+  // the draft keeps Immer from proxying every record it touches.
+  const id = nextFreeId(isDraft(tree) ? current(tree) : tree, "I");
   tree.individuals[id] = {
     id,
     names: [name],

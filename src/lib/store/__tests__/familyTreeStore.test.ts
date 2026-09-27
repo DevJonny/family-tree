@@ -280,3 +280,17 @@ test("removeIndividual also deletes a family they leave empty, and undo brings b
   assert.equal(tree.families[famId].husband, fatherId);
   assert.deepEqual(tree.individuals[fatherId].familyAsSpouse, [famId]);
 });
+
+test("addParent into a taken slot starts a new family instead of overwriting the parent there", () => {
+  reset();
+  const childId = useFamilyTreeStore.getState().addIndividual();
+  const first = useFamilyTreeStore.getState().addParent(childId, "father");
+  const second = useFamilyTreeStore.getState().addParent(childId, "father");
+
+  const { individuals, families } = useFamilyTreeStore.getState().tree;
+  const [famA, famB] = individuals[childId].familyAsChild;
+  assert.equal(families[famA].husband, first);
+  assert.equal(families[famB].husband, second);
+  assert.deepEqual(individuals[first].familyAsSpouse, [famA]);
+  assert.deepEqual(families[famB].children, [childId]);
+});

@@ -63,3 +63,11 @@ test("addPerson creates a person with the next free id, inside a recipe", () => 
   assert.equal(id, "@I5@");
   assert.ok(saveGedcom(tree).includes("0 @I5@ INDI\r\n1 NAME Ann Mary /Smith/\r\n"));
 });
+
+test("two people added in one recipe get different ids", () => {
+  const ids: string[] = [];
+  produce(TREE, (d) => {
+    ids.push(addPerson(d, { given: "A" }), addPerson(d, { given: "B" }));
+  });
+  assert.deepEqual(ids, ["@I5@", "@I6@"]);
+});

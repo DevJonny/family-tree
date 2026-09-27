@@ -1,7 +1,7 @@
-import { produce, type Draft } from "immer";
+import { current, isDraft, produce, type Draft } from "immer";
 import { dateSortKey } from "./dates";
 import { labelForEventTag } from "./eventTags";
-import { walkTree } from "./walk";
+import { walkFamily } from "./walk";
 import { nextFreeId, type Family, type FamilyTree, type Individual } from "./model";
 
 /**
@@ -54,15 +54,19 @@ export function addChild(tree: Tree, famId: string, childId: string): void {
 /**
  * Adds `personId` as a spouse/partner in whichever slot is empty. With both
  * empty, a woman goes in WIFE and anyone else in HUSB (the slots are what
- * GEDCOM 5.5.1 has; sex isn't enforced). Does nothing if both are taken or
- * they're already in the family.
+ * GEDCOM 5.5.1 has; sex isn't enforced). `slot` asks for one in
+ * particular. Does nothing if the slot is taken or they're already in the
+ * family.
  */
-export function addSpouse(tree: Tree, famId: string, personId: string): void {
+export function addSpouse(tree: Tree, famId: string, personId: string, slot?: "husband" | "wife"): void {
   const family = tree.families[famId];
   const person = tree.individuals[personId];
   if (!family || !person || isMember(family, personId)) return;
 
-  if (!family.husband && !family.wife) {
+  if (slot) {
+    if (family[slot]) return;
+    family[slot] = personId;
+  } else if (!family.husband && !family.wife) {
     if (person.sex === "F") family.wife = personId;
     else family.husband = personId;
   } else if (!family.husband) family.husband = personId;
@@ -72,13 +76,13 @@ export function addSpouse(tree: Tree, famId: string, personId: string): void {
 }
 
 /**
- * Starts a new family (a partnership) for `personId`, in the slot their
- * sex suggests, with `partnerId` (if any) in the other. Returns its id.
+ * Starts a new family (a partnership) for `personId`, in `slot` or the one
+ * their sex suggests, with `partnerId` (if any) in the other. Returns its id.
  */
-export function newFamily(tree: Tree, personId: string, partnerId?: string): string {
-  const famId = nextFreeId(tree, "F");
+export function newFamily(tree: Tree, personId: string, partnerId?: string, slot?: "husband" | "wife"): string {
+  const famId = nextFreeId(isDraft(tree) ? current(tree) : tree, "F");
   tree.families[famId] = { id: famId, children: [], events: [], notes: [], citations: [], extra: [] };
-  addSpouse(tree, famId, personId);
+  addSpouse(tree, famId, personId, slot);
   if (partnerId) addSpouse(tree, famId, partnerId);
   return famId;
 }
@@ -156,10 +160,7 @@ export function familyContents(tree: FamilyTree, famId: string): string[] {
   }
   let notes = 0;
   let citations = 0;
-  walkTree(tree, {
-    note: (_, owner) => void (owner === famId && notes++),
-    citation: (_, owner) => void (owner === famId && citations++),
-  });
+  walkFamily(family, { note: () => void notes++, citation: () => void citations++ });
   if (notes) out.push(plural(notes, "note"));
   if (citations) out.push(plural(citations, "citation"));
   if (family.extra.some((node) => !BOOKKEEPING_TAGS.has(node.tag))) {
@@ -179,11 +180,21 @@ export function pedigreeOf(person: Individual, famId: string): { value?: string;
   return { value: person.pedigree?.[famId], editable: true };
 }
 
-/** Sets (or, with undefined, clears) a child's relationship to one family. */
+/** Whether the file's header says GEDCOM 7, whose enumerations are in capitals. */
+function isGedcom7(tree: FamilyTree): boolean {
+  const gedc = tree.header?.children.find((n) => n.tag === "GEDC");
+  return gedc?.children.find((n) => n.tag === "VERS")?.value?.trim().startsWith("7") ?? false;
+}
+
+/**
+ * Sets (or, with undefined, clears) a child's relationship to one family.
+ * Values are 5.5.1's lower case (birth, adopted, ...), written in
+ * capitals in a GEDCOM 7 file.
+ */
 export function setPedigree(tree: Tree, childId: string, famId: string, value: string | undefined): void {
   const child = tree.individuals[childId];
   if (!child || !pedigreeOf(child, famId).editable) return;
-  if (value) (child.pedigree ??= {})[famId] = value;
+  if (value) (child.pedigree ??= {})[famId] = isGedcom7(tree) ? value.toUpperCase() : value;
   else if (child.pedigree) delete child.pedigree[famId];
 }
 
@@ -191,4 +202,15 @@ export function setPedigree(tree: Tree, childId: string, famId: string, value: s
 export function removalDeletesFamily(tree: FamilyTree, famId: string, personId: string): boolean {
   if (!tree.families[famId]) return false;
   return !produce(tree, (d) => removeFromFamily(d, famId, personId)).families[famId];
+}
+
+/**
+ * The families of `parentId` that `childId` could join as a child: those
+ * they aren't already in, as a child or as a spouse.
+ */
+export function joinableFamilies(tree: FamilyTree, parentId: string, childId: string): string[] {
+  return (tree.individuals[parentId]?.familyAsSpouse ?? []).filter((famId) => {
+    const family = tree.families[famId];
+    return family !== undefined && !isMember(family, childId);
+  });
 }

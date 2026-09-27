@@ -7,6 +7,7 @@ import {
   addSpouse,
   deleteIndividual,
   familyContents,
+  joinableFamilies,
   newFamily,
   pedigreeOf,
   removalDeletesFamily,
@@ -164,6 +165,13 @@ test("in a family with no spouses, a woman goes in WIFE and anyone else in HUSB"
   assert.equal(unknown.families["@F2@"].husband, "@I3@");
 });
 
+test("addSpouse can be told which slot, e.g. for a mother whose sex isn't recorded yet", () => {
+  const tree = produce(load(COUPLES), (d) => addSpouse(d, "@F2@", "@I3@", "wife"));
+  assert.equal(tree.families["@F2@"].wife, "@I3@");
+  const taken = load(COUPLES);
+  assert.equal(produce(taken, (d) => addSpouse(d, "@F1@", "@I3@", "husband")), taken);
+});
+
 test("addSpouse does nothing when both slots are taken or they're already in the family", () => {
   const before = load(COUPLES);
   const after = produce(before, (d) => {
@@ -310,4 +318,35 @@ test("a PEDI kept verbatim is shown but can't be changed, so it's never written 
 1 CHIL @I1@`);
   assert.deepEqual(pedigreeOf(tree.individuals["@I1@"], "@F1@"), { value: "OTHER", editable: false });
   assert.equal(produce(tree, (d) => setPedigree(d, "@I1@", "@F1@", "birth")), tree);
+});
+
+test("in a GEDCOM 7 file a relationship is written the 7.0 way, in capitals", () => {
+  const tree = loadGedcom(
+    "0 HEAD\n1 GEDC\n2 VERS 7.0\n0 @I1@ INDI\n1 FAMC @F1@\n0 @F1@ FAM\n1 CHIL @I1@\n0 TRLR\n",
+  ).tree;
+  const edited = produce(tree, (d) => setPedigree(d, "@I1@", "@F1@", "adopted"));
+  assert.deepEqual(lines(edited, "@I1@"), ["1 FAMC @F1@", "2 PEDI ADOPTED"]);
+});
+
+// --- Choosing parents -----------------------------------------------------------
+
+test("joinableFamilies offers a parent's families the person isn't already in, in any role", () => {
+  const tree = load(`
+0 @I1@ INDI
+1 FAMS @F1@
+1 FAMS @F2@
+1 FAMS @F3@
+0 @I2@ INDI
+1 FAMS @F1@
+1 FAMC @F3@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+0 @F2@ FAM
+1 HUSB @I1@
+0 @F3@ FAM
+1 HUSB @I1@
+1 CHIL @I2@`);
+  // @I2@ is @I1@'s wife in @F1@ and already his child in @F3@.
+  assert.deepEqual(joinableFamilies(tree, "@I1@", "@I2@"), ["@F2@"]);
 });

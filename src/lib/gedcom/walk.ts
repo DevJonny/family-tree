@@ -1,5 +1,5 @@
 import { labelForEventTag } from "./eventTags";
-import type { EventFact, FamilyTree } from "./model";
+import type { EventFact, Family, FamilyTree } from "./model";
 import { isNoteLink, type Citation, type Note } from "./sources";
 
 /**
@@ -26,7 +26,7 @@ export interface TreeVisitor {
   citationList?: (list: Citation[], ownerId: string, where: string) => void;
 }
 
-export function walkTree(tree: FamilyTree, visitor: TreeVisitor): void {
+function walkers(visitor: TreeVisitor) {
   const notes = (list: Note[] | undefined, owner: string, where: string) => {
     for (const note of list ?? []) {
       visitor.note?.(note, owner, where);
@@ -47,7 +47,17 @@ export function walkTree(tree: FamilyTree, visitor: TreeVisitor): void {
     citations(e.citations, owner, where);
     notes(e.notes, owner, where);
   };
+  const family = (fam: Family) => {
+    event(fam.marriage, fam.id);
+    fam.events.forEach((e) => event(e, fam.id));
+    notes(fam.notes, fam.id, "Note");
+    citations(fam.citations, fam.id, "Family");
+  };
+  return { notes, citations, event, family };
+}
 
+export function walkTree(tree: FamilyTree, visitor: TreeVisitor): void {
+  const { notes, citations, event, family } = walkers(visitor);
   for (const indi of Object.values(tree.individuals)) {
     for (const name of indi.names) citations(name.citations, indi.id, "Name");
     event(indi.birth, indi.id);
@@ -56,15 +66,15 @@ export function walkTree(tree: FamilyTree, visitor: TreeVisitor): void {
     notes(indi.notes, indi.id, "Note");
     citations(indi.citations, indi.id, "Person");
   }
-  for (const fam of Object.values(tree.families)) {
-    event(fam.marriage, fam.id);
-    fam.events.forEach((e) => event(e, fam.id));
-    notes(fam.notes, fam.id, "Note");
-    citations(fam.citations, fam.id, "Family");
-  }
+  for (const fam of Object.values(tree.families)) family(fam);
   for (const source of Object.values(tree.sources)) notes(source.notes, source.id, "Note");
   for (const repo of Object.values(tree.repositories)) notes(repo.notes, repo.id, "Note");
   for (const shared of Object.values(tree.notes)) citations(shared.citations, shared.id, "Note");
+}
+
+/** `walkTree` for one family only: its facts' and its own notes and citations. */
+export function walkFamily(fam: Family, visitor: TreeVisitor): void {
+  walkers(visitor).family(fam);
 }
 
 /** Ids of the records (people, families, sources, ...) that link this shared note, each once. */

@@ -158,9 +158,17 @@ function SourceEditor({
   const openOwner = (owner: CitedBy) => {
     if (owner.kind === "person") onOpenPerson(owner.ownerId);
     else if (owner.kind === "family") {
-      const fam = tree.families[owner.ownerId];
-      const person = fam.husband ?? fam.wife ?? fam.children[0];
-      if (person) onOpenPerson(person, owner.ownerId);
+      // Someone whose own record lists the family, so their Details has a
+      // block for it: a spouse first, else a child.
+      const famId = owner.ownerId;
+      const fam = tree.families[famId];
+      const spouses = [fam.husband, fam.wife].filter((id) => id !== undefined);
+      const person =
+        spouses.find((id) => tree.individuals[id]?.familyAsSpouse.includes(famId)) ??
+        fam.children.find((id) => tree.individuals[id]?.familyAsChild.includes(famId)) ??
+        spouses[0] ??
+        fam.children[0];
+      if (person) onOpenPerson(person, famId);
     } else if (owner.kind === "source") onOpenSource(owner.ownerId);
   };
 
