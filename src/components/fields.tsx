@@ -32,10 +32,11 @@ export function useCommittedInput(value: string, onCommit: (v: string) => void) 
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      commit();
-      (e.target as HTMLElement).blur();
-    }
+    // Blurring commits, so Enter only blurs. Committing here as well
+    // committed twice (the blur runs before the new value renders), and a
+    // recipe that assigns a fresh object, like `d.birth = {...}`, then
+    // recorded two undo entries for one edit.
+    if (e.key === "Enter" && !e.shiftKey) (e.target as HTMLElement).blur();
   }
 
   return { draft, setDraft, commit, onKeyDown };
